@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Agent 执行守卫（本阶段为最小版）。
+ * Agent 执行守卫（本阶段为最小版）。  yunfei
  *
  * <p>复现自参考项目 {@code service/AgentExecutionGuardService}，但只保留
  * <b>Tool 白名单过滤</b>这一核心能力：
@@ -54,5 +54,10 @@ public class AgentExecutionGuardService {
                 .map(callbackByName::get)
                 .map(callback -> (ToolCallback) callback)
                 .toList();
+    }
+
+
+    void test(){
+
     }
 }
