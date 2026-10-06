@@ -1,0 +1,50 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: mini-omni-merchant
+
+  # 关掉 Spring AI 对 OpenAI 的自动配置：
+  # 本阶段只使用 LlmConfiguration 手动构建的 DeepSeek ChatModel（OpenAI 兼容），
+  # 不需要 chat/embedding/audio/image/moderation 这些自动配置的 Bean。
+  ai:
+    model:
+      chat: none
+      embedding: none
+      audio:
+        speech: none
+        transcription: none
+      image: none
+      moderation: none
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/mini-omni-merchant?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: 123456
+
+
+
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+
+# DeepSeek（OpenAI 兼容接口）—— Agent 主链当前固定使用该模型。
+# 未配置 api-key 时不会创建 ChatModel，Agent 接口会返回明确的“模型未配置”提示。
+omnimerchant:
+  llm:
+    deepseek:
+      api-key: sk-b979168e04864101b098cc170d45adca
+      base-url: https://api.deepseek.com
+      model: deepseek-flash
+
+
+
+
+
+
+
