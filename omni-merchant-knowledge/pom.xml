@@ -19,7 +19,93 @@
     <packaging>jar</packaging>
 
     <description>
-        知识库与 RAG 模块
+        知识库与 RAG 模块：政策文件加载、PgVector 向量检索、BM25 检索、
+        候选融合与 Qwen Reranker 重排，并向 Agent 暴露 PolicyTools。
     </description>
+
+    <dependencies>
+
+        <!-- 统一响应体 R<T>（RagAdminController / RagSearchController 使用） -->
+        <dependency>
+            <groupId>com.omnimerchant</groupId>
+            <artifactId>omni-merchant-common</artifactId>
+            <version>${project.version}</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- PgVector 数据源使用的 JdbcTemplate 支持 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <!-- PostgreSQL 驱动（PgVector / BM25 均读取同一张 policy_vectors 表） -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- pgvector JDBC 类型 -->
+        <dependency>
+            <groupId>com.pgvector</groupId>
+            <artifactId>pgvector</artifactId>
+        </dependency>
+
+        <!-- Spring AI：@Tool 注解 + OpenAI 兼容 Embedding + PgVectorStore -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-model</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-pgvector-store</artifactId>
+        </dependency>
+
+        <!-- Jackson：QwenReranker 请求/响应体与 PolicyAnswer 序列化 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-jackson2</artifactId>
+        </dependency>
+
+        <!-- Spring Web：QwenReranker 使用 RestClient，并提供 RAG 调试接口 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- BM25：Lucene 内存索引 + 中文分词 SmartChineseAnalyzer -->
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-queryparser</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analysis-smartcn</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
 
 </project>

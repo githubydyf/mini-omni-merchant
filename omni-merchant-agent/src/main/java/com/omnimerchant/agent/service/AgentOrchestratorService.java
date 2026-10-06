@@ -43,8 +43,8 @@ public class AgentOrchestratorService {
                     "HIGH", true, true, true);
             case "PRODUCT_ADVICE" -> new SpecialistPlan("product", "商品顾问智能体",
                     List.of("searchProductCatalog"), "LOW", false, false, false);
-            // POLICY_QA 的编排保留原项目设计；政策 RAG 工具（refundPolicyRAG）尚未复现，
-            // 因此该 specialist 当前会返回“政策知识模块暂未启用”，不会伪造工具。
+            // POLICY_QA 只允许政策 RAG 工具 refundPolicyRAG（由 omni-merchant-knowledge 提供），
+            // 白名单在 AgentExecutionGuardService 于 Java 层强制生效。
             case "POLICY_QA" -> new SpecialistPlan("policy_rag", "政策 RAG 智能体",
                     List.of("refundPolicyRAG"), "MEDIUM", false, false, false);
             case "COMPLAINT", "HUMAN_REQUEST" -> new SpecialistPlan("handoff", "人工交接智能体",

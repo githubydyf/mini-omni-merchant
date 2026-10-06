@@ -6,7 +6,7 @@ spring:
     name: mini-omni-merchant
 
   # 关掉 Spring AI 对 OpenAI 的自动配置：
-  # 本阶段只使用 LlmConfiguration 手动构建的 DeepSeek ChatModel（OpenAI 兼容），
+  # DeepSeek ChatModel 与 Qwen Embedding 都由项目手动构建（OpenAI 兼容），
   # 不需要 chat/embedding/audio/image/moderation 这些自动配置的 Bean。
   ai:
     model:
@@ -18,13 +18,12 @@ spring:
       image: none
       moderation: none
 
+  # MySQL：业务主数据源（MyBatis-Plus）。由 bootstrap 的 DataSourceConfig 显式声明为 @Primary。
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/mini-omni-merchant?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: root
     password: 123456
-
-
 
 
 mybatis-plus:
@@ -33,18 +32,38 @@ mybatis-plus:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
 
-# DeepSeek（OpenAI 兼容接口）—— Agent 主链当前固定使用该模型。
-# 未配置 api-key 时不会创建 ChatModel，Agent 接口会返回明确的“模型未配置”提示。
-omnimerchant:
+# ============================================================
+# 本项目统一配置来源（正式入口：omni-merchant-bootstrap）。
+# 本阶段为本地开发联调，全部直接写死在此文件，不经过环境变量。
+# ============================================================
+app:
+
+  # DeepSeek（OpenAI 兼容接口）—— Agent 主链固定使用该模型。
   llm:
     deepseek:
-      api-key: sk-b979168e04864101b098cc170d45adca
+      api-key: sk-4979c052715e470eaa9e556836c2f971
       base-url: https://api.deepseek.com
       model: deepseek-flash
 
+  # PostgreSQL / PgVector —— RAG 检索库（knowledge 模块使用）。
+  pgvector:
+    url: jdbc:postgresql://localhost:5433/omni_rag
+    username: postgres
+    password: 123456
+    # 与 Embedding 模型输出维度保持一致。
+    dimensions: 1024
+    table-name: policy_vectors
 
+  # Qwen Embedding —— 百炼 OpenAI 兼容接口。
+  embedding:
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    # TODO 替换为真实百炼 API Key
+    api-key: sk-ws-H.PILYEYR.fAVi.MEYCIQDoJtYsExZAyA4OZL3daxny-JAx1PkflO0B6eb4S2z-VAIhALulBNKIUSP5r_rD6zHZQFxfWVcyZiIspUTtd7F4KN6k
+    model: text-embedding-v3
 
-
-
-
-
+  # Qwen Reranker —— 百炼精排接口（不可用时自动降级为召回排名）。
+  reranker:
+    url: https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
+    # TODO 替换为真实百炼 API Key
+    api-key: sk-ws-H.PILYEYR.fAVi.MEYCIQDoJtYsExZAyA4OZL3daxny-JAx1PkflO0B6eb4S2z-VAIhALulBNKIUSP5r_rD6zHZQFxfWVcyZiIspUTtd7F4KN6k
+    model: qwen3.7-text-rerank

@@ -37,6 +37,10 @@
     <properties>
         <java.version>21</java.version>
         <spring-ai.version>2.0.0</spring-ai.version>
+        <!-- BM25 使用 Lucene；Lucene 10 需要 Java 21（本项目已使用 21）。 -->
+        <lucene.version>10.3.1</lucene.version>
+        <!-- JDBC 读写 pgvector 列（com.pgvector.PGvector） -->
+        <pgvector.version>0.1.6</pgvector.version>
     </properties>
 
     <dependencyManagement>
@@ -48,6 +52,33 @@
                 <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!--
+                Lucene 未纳入 Spring Boot / Spring AI BOM，需要显式固定版本。
+                BM25 使用：lucene-core + lucene-queryparser + lucene-analysis-smartcn。
+            -->
+            <dependency>
+                <groupId>org.apache.lucene</groupId>
+                <artifactId>lucene-core</artifactId>
+                <version>${lucene.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.lucene</groupId>
+                <artifactId>lucene-queryparser</artifactId>
+                <version>${lucene.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.lucene</groupId>
+                <artifactId>lucene-analysis-smartcn</artifactId>
+                <version>${lucene.version}</version>
+            </dependency>
+
+            <!-- pgvector JDBC 类型（spring-ai-pgvector-store 会传递引入，这里显式固定版本） -->
+            <dependency>
+                <groupId>com.pgvector</groupId>
+                <artifactId>pgvector</artifactId>
+                <version>${pgvector.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

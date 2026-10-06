@@ -73,6 +73,18 @@
             <scope>compile</scope>
         </dependency>
 
+        <!--
+            知识库模块：Agent 依赖 Knowledge（PolicyTools → refundPolicyRAG）。
+            依赖方向必须单向：agent → knowledge。
+            不允许 knowledge → agent（否则形成循环依赖）。
+        -->
+        <dependency>
+            <groupId>com.omnimerchant</groupId>
+            <artifactId>omni-merchant-knowledge</artifactId>
+            <version>${project.version}</version>
+            <scope>compile</scope>
+        </dependency>
+
         <!-- Spring AI Tool 注解与 ToolCallbackProvider（版本由根 pom 的 BOM 管理） -->
         <dependency>
             <groupId>org.springframework.ai</groupId>

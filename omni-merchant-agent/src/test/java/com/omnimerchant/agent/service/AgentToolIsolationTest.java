@@ -8,7 +8,6 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Tool 隔离验收测试（对应任务 §9 / §26）。
@@ -24,6 +23,7 @@ class AgentToolIsolationTest {
 
     /** 当前已注册的全部业务 Tool（与 ToolCallbackConfig 一致）。 */
     private final ToolCallback[] allCallbacks = {
+            stub("refundPolicyRAG"),
             stub("queryOrder"),
             stub("trackLogistics"),
             stub("searchProductCatalog"),
@@ -105,14 +105,21 @@ class AgentToolIsolationTest {
     }
 
     @Test
-    void policyQaShouldKeepDesignButProvideNoFakeTool() {
+    void policyQaShouldOnlyExposeRefundPolicyRag() {
         var plan = orchestrator.plan("POLICY_QA", "退货运费谁承担？");
         assertThat(plan.specialistKey()).isEqualTo("policy_rag");
-        // refundPolicyRAG 尚未复现，白名单里只有设计名，不存在假实现
-        assertThat(plan.toolAllowlist()).containsExactly("refundPolicyRAG");
-        assertThatThrownBy(() -> guard.guardedCallbacks(allCallbacks, plan))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("refundPolicyRAG");
+        // POLICY_QA 只允许政策 RAG 工具 refundPolicyRAG
+        assertThat(guardedNames(plan)).containsExactly("refundPolicyRAG");
+    }
+
+    @Test
+    void nonPolicyIntentsMustNeverExposeRefundPolicyRag() {
+        for (var intent : List.of("ORDER_STATUS", "LOGISTICS", "PRODUCT_ADVICE",
+                "RETURN_REFUND", "HUMAN_REQUEST")) {
+            assertThat(guardedNames(orchestrator.plan(intent, "普通业务问题")))
+                    .as("intent=%s 不应看到 refundPolicyRAG", intent)
+                    .doesNotContain("refundPolicyRAG");
+        }
     }
 
     private List<String> guardedNames(AgentOrchestratorService.SpecialistPlan plan) {

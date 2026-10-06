@@ -28,11 +28,11 @@ public class LlmConfiguration {
     private static final Integer MAX_TOKENS = 4096;
 
     @Bean
-    @ConditionalOnExpression("'${omnimerchant.llm.deepseek.api-key:}' != ''")
+    @ConditionalOnExpression("'${app.llm.deepseek.api-key:}' != ''")
     public ChatModel deepSeekChatModel(
-            @Value("${omnimerchant.llm.deepseek.base-url:https://api.deepseek.com}") String baseUrl,
-            @Value("${omnimerchant.llm.deepseek.api-key:}") String apiKey,
-            @Value("${omnimerchant.llm.deepseek.model:deepseek-chat}") String model) {
+            @Value("${app.llm.deepseek.base-url:https://api.deepseek.com}") String baseUrl,
+            @Value("${app.llm.deepseek.api-key:}") String apiKey,
+            @Value("${app.llm.deepseek.model:deepseek-chat}") String model) {
         return OpenAiChatModel.builder()
                 .options(OpenAiChatOptions.builder()
                         .baseUrl(baseUrl)
