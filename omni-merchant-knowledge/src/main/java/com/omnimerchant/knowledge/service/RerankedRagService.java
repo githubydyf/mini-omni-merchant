@@ -2,6 +2,7 @@ package com.omnimerchant.knowledge.service;
 
 import com.omnimerchant.knowledge.dto.RerankResult;
 import com.omnimerchant.knowledge.dto.RetrievalCandidate;
+import com.omnimerchant.knowledge.service.rerank.RerankOutcome;
 import com.omnimerchant.knowledge.service.rerank.Reranker;
 import org.springframework.stereotype.Service;
 
@@ -49,10 +50,25 @@ public class RerankedRagService {
      * @param finalTopK  Reranker 最终返回数量
      */
     public List<RerankResult> search(String question, int candidateK, int finalTopK) throws Exception {
+        return searchWithEvidence(question, candidateK, finalTopK).results();
+    }
+
+    /**
+     * 检索并返回执行模式（是否真正重排 / 是否降级）。
+     *
+     * <p>需要判断“证据强度”的调用方（PolicyTools / 证据评估）应使用本方法，
+     * 以便区分真实低分与 Reranker 降级。
+     */
+    public RerankOutcome searchWithEvidence(String question, int candidateK, int finalTopK) throws Exception {
 
         List<RetrievalCandidate> candidates =
                 candidateRetrievalService.retrieve(question, candidateK);
 
-        return reranker.rerank(question, candidates, finalTopK);
+        return reranker.rerankWithEvidence(question, candidates, finalTopK);
+    }
+
+    /** 默认参数的便捷入口。 */
+    public RerankOutcome searchWithEvidence(String question) throws Exception {
+        return searchWithEvidence(question, 10, 5);
     }
 }

@@ -14,9 +14,10 @@ import java.util.List;
  *   <li>{@code context}：给模型阅读的证据上下文（带来源与片段编号）。</li>
  *   <li>{@code citations}：给系统保留的可追溯信息（真实字段）。</li>
  *   <li>{@code error}：检索失败或无可靠结果时的中文提示；成功时为 null。</li>
- *   <li>{@code evidenceLevel} / {@code refusalReason}：为后续证据分级预留。
- *       当前没有真实的证据等级计算能力，因此 {@code evidenceLevel} 一律为 null，
- *       不伪造 HIGH / MEDIUM / LOW。</li>
+ *   <li>{@code evidenceLevel}：由真实 Reranker 分数计算出的证据等级
+ *       （SUFFICIENT / PARTIAL / WEAK / NONE）。Reranker 降级时无法判定，返回 null；
+ *       绝不伪造等级。</li>
+ *   <li>{@code refusalReason}：证据不足或依据有限时的中文说明；无则为 null。</li>
  * </ul>
  */
 public record PolicyAnswer(
@@ -36,9 +37,30 @@ public record PolicyAnswer(
         return new PolicyAnswer(null, null, message, null, message);
     }
 
+    /**
+     * 系统判定证据不足（WEAK / NONE）：不返回任何政策片段，强制模型不得据此作答。
+     *
+     * @param evidenceLevel 证据等级（当前为 NONE 或 WEAK）
+     * @param reason        中文拒答原因
+     */
+    public static PolicyAnswer noEvidence(String evidenceLevel, String reason) {
+        return new PolicyAnswer(null, null, reason, evidenceLevel, reason);
+    }
+
     /** 检索成功：携带真实证据上下文与引用。 */
     public static PolicyAnswer of(String context, List<Citation> citations) {
         return new PolicyAnswer(context, citations, null, null, null);
+    }
+
+    /**
+     * 检索成功且带有证据等级。
+     *
+     * @param evidenceLevel 证据等级：SUFFICIENT / PARTIAL；Reranker 降级无法判定时为 null
+     * @param refusalReason PARTIAL 时提示模型需说明不确定性；否则为 null
+     */
+    public static PolicyAnswer of(String context, List<Citation> citations,
+                                  String evidenceLevel, String refusalReason) {
+        return new PolicyAnswer(context, citations, null, evidenceLevel, refusalReason);
     }
 
     /**

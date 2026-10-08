@@ -41,7 +41,7 @@ app:
   # DeepSeek（OpenAI 兼容接口）—— Agent 主链固定使用该模型。
   llm:
     deepseek:
-      api-key: sk-4979c052715e470eaa9e556836c2f971
+      api-key: sk-6c681004dc0f45c0a2dc1aa2c3b96178
       base-url: https://api.deepseek.com
       model: deepseek-flash
 
@@ -67,3 +67,10 @@ app:
     # TODO 替换为真实百炼 API Key
     api-key: sk-ws-H.PILYEYR.fAVi.MEYCIQDoJtYsExZAyA4OZL3daxny-JAx1PkflO0B6eb4S2z-VAIhALulBNKIUSP5r_rD6zHZQFxfWVcyZiIspUTtd7F4KN6k
     model: qwen3.7-text-rerank
+
+  # 证据评估阈值（supportScore = rerankScore × 100）。
+  # 低于 min-support-score 判定为证据不足，系统层拒答；
+  # ≥2 条且平均分达到 sufficient-support-score 判定为证据充分。
+  retrieval:
+    min-support-score: 45
+    sufficient-support-score: 70

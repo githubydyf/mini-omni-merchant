@@ -2,7 +2,9 @@ package com.omnimerchant.knowledge.tool;
 
 import com.omnimerchant.knowledge.dto.PolicyAnswer;
 import com.omnimerchant.knowledge.dto.RerankResult;
+import com.omnimerchant.knowledge.service.PolicyEvidenceEvaluator;
 import com.omnimerchant.knowledge.service.RerankedRagService;
+import com.omnimerchant.knowledge.service.rerank.RerankOutcome;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
@@ -18,9 +20,11 @@ import java.util.List;
  * <pre>
  * refundPolicyRAG(question)
  *   ↓
- * RerankedRagService（最终 RAG 检索入口）
+ * RerankedRagService（最终 RAG 检索入口，返回 RerankOutcome）
  *   ↓
- * PolicyAnswer(context + citations)
+ * PolicyEvidenceEvaluator（阈值过滤 + 证据分级）
+ *   ↓
+ * PolicyAnswer(context + citations + evidenceLevel)
  * </pre>
  *
  * <p>不实现业务检索算法，不自行查询 PgVector / Lucene；也<b>不生成最终客服回答</b>。
@@ -35,6 +39,7 @@ import java.util.List;
 public class PolicyTools {
 
     private final RerankedRagService rerankedRagService;
+    private final PolicyEvidenceEvaluator evidenceEvaluator;
 
     @Tool(description = """
             检索商家的退货、退款、换货、配送和售后政策知识库。
@@ -49,14 +54,25 @@ public class PolicyTools {
         try {
             log.info("调用 refundPolicyRAG，question='{}'", question);
 
-            List<RerankResult> results = rerankedRagService.search(question, 10, 5);
+            RerankOutcome outcome = rerankedRagService.searchWithEvidence(question, 10, 5);
+            List<RerankResult> results = outcome.results();
 
-            if (results == null || results.isEmpty()) {
-                log.info("refundPolicyRAG 未检索到相关政策信息");
-                return PolicyAnswer.error("当前政策知识库中没有检索到足够的信息。");
+            // 系统层证据判定：低于阈值的检索结果不提供给模型，强制模型不得据此作答。
+            PolicyEvidenceEvaluator.EvidenceAssessment assessment = evidenceEvaluator.assess(outcome);
+
+            log.info("refundPolicyRAG 证据评估：mode={}，等级={}，可用={}，命中={}",
+                    outcome.mode(), assessment.level(), assessment.usable(),
+                    results == null ? 0 : results.size());
+
+            if (!assessment.usable()) {
+                return PolicyAnswer.noEvidence(assessment.level(), assessment.refusalReason());
             }
 
-            return PolicyAnswer.of(buildContext(results), buildCitations(results));
+            return PolicyAnswer.of(
+                    buildContext(results),
+                    buildCitations(results),
+                    assessment.level(),
+                    assessment.refusalReason());
 
         } catch (Exception e) {
             log.error("refundPolicyRAG 检索失败：{}", e.getMessage());

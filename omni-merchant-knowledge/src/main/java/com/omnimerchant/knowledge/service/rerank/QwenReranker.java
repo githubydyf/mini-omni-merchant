@@ -56,12 +56,17 @@ public class QwenReranker implements Reranker {
 
     @Override
     public List<RerankResult> rerank(String question, List<RetrievalCandidate> candidates, int topK) {
+        return rerankWithEvidence(question, candidates, topK).results();
+    }
+
+    @Override
+    public RerankOutcome rerankWithEvidence(String question, List<RetrievalCandidate> candidates, int topK) {
 
         if (question == null || question.isBlank()) {
             throw new IllegalArgumentException("question 不能为空");
         }
         if (candidates == null || candidates.isEmpty()) {
-            return List.of();
+            return new RerankOutcome(List.of(), RerankOutcome.MODE_FALLBACK_EMPTY);
         }
         if (topK <= 0) {
             throw new IllegalArgumentException("topK 必须大于 0");
@@ -93,7 +98,7 @@ public class QwenReranker implements Reranker {
                 throw new IllegalStateException("Reranker 返回 results=null");
             }
 
-            return response.output().results().stream()
+            List<RerankResult> reranked = response.output().results().stream()
                     // 官方结果已按 relevance_score 降序，这里再排一次以防接口行为变化
                     .sorted(Comparator.comparingDouble(QwenRerankItem::relevanceScore).reversed())
                     .limit(Math.min(topK, candidates.size()))
@@ -114,6 +119,8 @@ public class QwenReranker implements Reranker {
                     })
                     .toList();
 
+            return new RerankOutcome(reranked, RerankOutcome.MODE_RERANKED);
+
         } catch (RestClientResponseException e) {
             log.error("调用 {} 失败：HTTP {}，response={}，url={}",
                     model, e.getStatusCode(), e.getResponseBodyAsString(), url);
@@ -126,15 +133,14 @@ public class QwenReranker implements Reranker {
 
     /**
      * 降级：Reranker 不可用时退回召回候选池排名结果。
-     *
-     * <p>只返回候选池中的真实片段，rerankScore 置 0（表示未经过重排）。
+     * <p>只返回候选池中的真实片段，rerankScore 置 0（表示未经过重排，不是“相关性为 0”）。
      * 排序规则：优先按 Vector 排名，其次按 BM25 排名。
      */
-    private List<RerankResult> fallback(List<RetrievalCandidate> candidates, int topK, String reason) {
+    private RerankOutcome fallback(List<RetrievalCandidate> candidates, int topK, String reason) {
 
         log.warn("Reranker 降级：退回召回候选排名，原因：{}", reason);
 
-        return candidates.stream()
+        List<RerankResult> results = candidates.stream()
                 .sorted(Comparator
                         .comparingInt((RetrievalCandidate c) ->
                                 c.vectorRank() == null ? Integer.MAX_VALUE : c.vectorRank())
@@ -150,6 +156,7 @@ public class QwenReranker implements Reranker {
                         candidate.bm25Rank(),
                         candidate.content()))
                 .toList();
+        return new RerankOutcome(results, RerankOutcome.MODE_FALLBACK_ERROR);
     }
 
     private record QwenRerankRequest(
