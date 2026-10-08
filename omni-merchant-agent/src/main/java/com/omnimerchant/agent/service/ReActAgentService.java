@@ -2,8 +2,11 @@ package com.omnimerchant.agent.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omnimerchant.agent.context.CallContextHolder;
+import com.omnimerchant.agent.context.CallScope;
+import com.omnimerchant.agent.dto.ChatStreamEvent;
 import com.omnimerchant.agent.entity.Conversation;
 import com.omnimerchant.agent.mapper.ConversationMapper;
+import com.omnimerchant.agent.tool.ToolCallbackScope;
 import com.omnimerchant.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +14,11 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * ReAct Agent 主链（本阶段为最小版）。
@@ -90,6 +97,11 @@ public class ReActAgentService {
     private final AgentOrchestratorService agentOrchestratorService;
     private final AgentExecutionGuardService agentExecutionGuardService;
     private final ConversationMapper conversationMapper;
+    private final ChatMessagePersistenceService chatMessagePersistenceService;
+
+    /** 实际使用的模型名（写入 chat_message.model_name，仅记录真实配置值）。 */
+    @Value("${app.llm.deepseek.model:deepseek-chat}")
+    private String modelName;
 
     /**
      * 单轮对话入口。
@@ -139,6 +151,101 @@ public class ReActAgentService {
             CallContextHolder.clear();
             TenantContextHolder.clear();
         }
+    }
+
+    /**
+     * 正式流式对话入口（供 ChatController 使用）。
+     *
+     * <p>真实调用 Spring AI 的流式接口（{@code chatClient.prompt().stream().content()}），
+     * <b>不是</b>先生成完整结果再按字符拆分伪装流式。事件顺序固定：
+     * {@code status} → 若干 {@code translated_delta} → {@code final}（仅一次）。
+     *
+     * <p>持久化边界：
+     * <ul>
+     *   <li>user 消息由调用方（Controller）在订阅前写入，模型失败/客户端断开也不丢失；</li>
+     *   <li>assistant 消息只在<b>模型成功完成且数据库写入成功</b>时保存，随后才发 final；</li>
+     *   <li>模型失败、DB 写入失败都只发 {@code error}，不伪造最终回复。</li>
+     * </ul>
+     *
+     * <p>上下文：构建请求作用域 {@link CallScope}，并用 {@link ToolCallbackScope} 包装每个
+     * 允许使用的 ToolCallback，使工具在 boundedElastic 线程执行时也能读到正确的
+     * tenantId / intent / conversationUuid。
+     *
+     * @param conversation 已校验可用的会话（提供真实 tenantId 与 id）
+     */
+    public Flux<ChatStreamEvent> chatEvents(Conversation conversation, String userMessage, String intent) {
+        return Flux.defer(() -> {
+            var plan = agentOrchestratorService.plan(intent, userMessage);
+            log.info("Agent 流式编排：intent={}, specialist={}, allowlist={}",
+                    intent, plan.specialistKey(), plan.toolAllowlist());
+
+            if (plan.toolAllowlist().isEmpty()) {
+                return Flux.just(ChatStreamEvent.error(
+                        "当前意图暂不支持自动处理（未识别到可用意图，或该意图尚未接入处理链）。"));
+            }
+
+            var chatModel = chatModelProvider.getIfAvailable();
+            if (chatModel == null) {
+                log.warn("流式对话被拒绝：未配置 DeepSeek 模型");
+                return Flux.just(ChatStreamEvent.error(
+                        "未配置 DeepSeek 模型，请检查 application.yml 的 app.llm.deepseek.api-key。"));
+            }
+
+            var scope = new CallScope(conversation.getTenantId(), intent, conversation.getConversationUuid());
+            var callbacks = agentExecutionGuardService
+                    .guardedCallbacks(toolCallbackProvider.getToolCallbacks(), plan)
+                    .stream()
+                    .map(callback -> ToolCallbackScope.wrap(callback, scope))
+                    .toList();
+
+            var chatClient = ChatClient.builder(chatModel)
+                    .defaultTools(callbacks)
+                    .defaultSystem(systemPrompt(plan))
+                    .build();
+
+            var buffer = new StringBuilder();
+            var startedAt = System.currentTimeMillis();
+            var finalized = new AtomicBoolean(false);
+
+            Flux<ChatStreamEvent> deltas = chatClient.prompt()
+                    .user(userMessage)
+                    .stream()
+                    .content()
+                    .filter(chunk -> chunk != null && !chunk.isEmpty())
+                    .map(chunk -> {
+                        buffer.append(chunk);
+                        return ChatStreamEvent.delta(chunk);
+                    });
+
+            Flux<ChatStreamEvent> finalEvent = Flux.defer(() -> {
+                String finalText = buffer.toString();
+                if (finalText.isBlank()) {
+                    return Flux.just(ChatStreamEvent.error("智能客服未能生成有效回复，请稍后重试。"));
+                }
+                // 只保存一次，避免重复订阅导致重复落库
+                if (!finalized.compareAndSet(false, true)) {
+                    return Flux.empty();
+                }
+                try {
+                    chatMessagePersistenceService.saveAssistantMessage(
+                            conversation, finalText, modelName,
+                            (int) (System.currentTimeMillis() - startedAt));
+                } catch (Exception e) {
+                    log.error("assistant 消息落库失败：conv={}, error={}",
+                            conversation.getConversationUuid(), e.getMessage());
+                    return Flux.just(ChatStreamEvent.error("回复已生成但保存失败，请稍后重试。"));
+                }
+                return Flux.just(ChatStreamEvent.finalAnswer(finalText));
+            });
+
+            return Flux.concat(Flux.just(ChatStreamEvent.status("PROCESSING")), deltas, finalEvent)
+                    .onErrorResume(error -> {
+                        log.error("流式对话失败：conv={}, intent={}, error={}",
+                                conversation.getConversationUuid(), intent, error.getMessage());
+                        return Flux.just(ChatStreamEvent.error(
+                                "本次请求暂时无法处理，请稍后重试或转人工客服。"));
+                    });
+        });
     }
 
     /** 中文 System Prompt + 追加当前 Specialist 的运行时信息（不暴露全量 Tool 名单）。 */

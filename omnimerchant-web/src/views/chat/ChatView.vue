@@ -6,7 +6,7 @@
         <span class="version">智能客服测试台</span>
       </div>
       <div class="new-chat-btn">
-        <a-button block type="primary" @click="startNewChat">
+        <a-button block type="primary" :loading="creating" @click="startNewChat">
           <template #icon><PlusOutlined /></template>
           新对话
         </a-button>
@@ -30,48 +30,38 @@
           <template #icon><SettingOutlined /></template>
           管理后台
         </a-button>
-        <!--
-          当前开发阶段：登录与鉴权已下线。
-          退出按钮依赖 authStore.logout 与 /login 路由，暂时隐藏。
-          恢复鉴权后重新启用：
-          <a-button danger type="link" @click="handleLogout">
-            <template #icon><LogoutOutlined /></template>
-            退出
-          </a-button>
-        -->
       </div>
     </aside>
 
     <main class="chat-main">
       <header class="chat-header">
-        <a-select
-          v-model:value="selectedTenantId"
-          show-search
-          placeholder="选择租户"
-          style="width: 280px"
-          option-filter-prop="label"
-          @change="onTenantChange"
-        >
-          <a-select-option
-            v-for="tenant in tenants"
-            :key="tenant.id"
-            :value="tenant.id"
-            :label="tenantOptionLabel(tenant)"
-          >
-            {{ tenantOptionLabel(tenant) }}
-          </a-select-option>
-        </a-select>
+        <div class="header-controls">
+          <a-input-number
+            v-model:value="tenantId"
+            :min="1"
+            :controls="false"
+            style="width: 120px"
+            placeholder="租户ID"
+            @change="onTenantChange"
+          />
+          <span class="tenant-hint">开发测试租户（如 1001）</span>
+          <a-select
+            v-model:value="selectedIntent"
+            style="width: 200px"
+            :options="intentOptions"
+          />
+        </div>
         <a-tag :color="streaming ? 'gold' : 'green'">{{ streaming ? '回复中' : '就绪' }}</a-tag>
       </header>
 
       <div ref="msgContainer" class="messages-container">
-        <div v-if="messages.length === 0" class="welcome">
-          <h3>知识库对话测试</h3>
-          <p>这里会调用后台智能客服链路，可验证 RAG 政策问答、订单、物流、商品推荐和人工升级。</p>
+        <div v-if="messages.length === 0 && !streaming" class="welcome">
+          <h3>智能客服对话测试</h3>
+          <p>这里会调用真实后台链路：保存消息、按所选意图编排 Agent、调用订单/物流/商品/政策工具，并流式返回回答。</p>
           <div class="examples">
-            <button type="button" @click="sendMessage('这件外套可以退货吗？')">这件外套可以退货吗？</button>
-            <button type="button" @click="sendMessage('订单 #1001 现在到哪里了？')">订单 #1001 现在到哪里了？</button>
-            <button type="button" @click="sendMessage('推荐一款 80 美元以内的防水旅行背包')">推荐防水旅行背包</button>
+            <button type="button" @click="sendMessage('退货期限是多少天？')">退货期限是多少天？</button>
+            <button type="button" @click="sendMessage('查询订单 #1001 的状态。')">查询订单 #1001 的状态</button>
+            <button type="button" @click="sendMessage('推荐100美元以内的商品。')">推荐100美元以内的商品</button>
           </div>
         </div>
 
@@ -90,9 +80,9 @@
         <a-input-search
           v-model:value="inputText"
           enter-button="发送"
-          placeholder="输入消息测试智能客服，支持多语言"
+          placeholder="输入消息测试智能客服（中文）"
           size="large"
-          :disabled="!selectedTenantId || streaming"
+          :disabled="!tenantId || !currentConvId || streaming"
           :loading="streaming"
           @search="sendMessage()"
         />
@@ -105,77 +95,117 @@
 import { nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { consumeSse } from '@/utils/sse'
-// import { LogoutOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { PlusOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import api from '@/api'
 import MessageBubble from '@/components/MessageBubble.vue'
-// import { useAuthStore } from '@/stores/auth'
-import { selectDefaultTenantId, setStoredTenantId } from '@/utils/tenant'
-import { tenantOptionLabel } from '@/utils/display'
-import type { ChatMessage, ChatTenant } from '@/types/contracts'
+import { getStoredTenantId, setStoredTenantId } from '@/utils/tenant'
+import { consumeChatStream, mapBackendMessages } from '@/utils/chatStream'
 import { httpErrorMessage } from '@/utils/httpError'
+import type { ChatMessage } from '@/types/contracts'
 
 const router = useRouter()
-// 当前开发阶段：登录与鉴权已下线，不再依赖 authStore。
-// import { useAuthStore } from '@/stores/auth'
-// const authStore = useAuthStore()
 
-const selectedTenantId = ref<number | null>(null)
-const tenants = ref<ChatTenant[]>([])
+/**
+ * 显式意图选择：本阶段不做自动 Triage，测试台必须显式指定意图，
+ * 否则后端会落到 triage（无可用工具）而无法路由。
+ */
+const INTENTS = [
+  'ORDER_STATUS',
+  'LOGISTICS',
+  'PRODUCT_ADVICE',
+  'RETURN_REFUND',
+  'CANCEL_ORDER',
+  'ADDRESS_CHANGE',
+  'POLICY_QA',
+  'COMPLAINT',
+  'HUMAN_REQUEST',
+]
+const intentOptions = INTENTS.map((value) => ({ value, label: value }))
+
+const tenantId = ref<number | null>(getStoredTenantId() ?? 1001)
+const selectedIntent = ref('POLICY_QA')
 const conversations = ref<{ uuid: string; title: string; time: string }[]>([])
 const currentConvId = ref('')
 const messages = ref<ChatMessage[]>([])
 const inputText = ref('')
 const streaming = ref(false)
+const creating = ref(false)
 const streamText = ref('')
-const msgContainer = ref<HTMLElement>()
 const scrollAnchor = ref<HTMLElement>()
 
-function generateUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
-    const random = (Math.random() * 16) | 0
-    return (char === 'x' ? random : (random & 0x3) | 0x8).toString(16)
-  })
-}
-
-function startNewChat() {
-  currentConvId.value = generateUUID()
-  messages.value = []
-  streamText.value = ''
-  conversations.value.unshift({
-    uuid: currentConvId.value,
-    title: '新对话',
-    time: new Date().toLocaleTimeString('zh-CN'),
-  })
-}
-
-function switchConversation(uuid: string) {
-  currentConvId.value = uuid
-  messages.value = []
-  streamText.value = ''
-}
-
 function onTenantChange() {
-  setStoredTenantId(selectedTenantId.value)
-  if (!currentConvId.value) startNewChat()
+  setStoredTenantId(tenantId.value)
+  currentConvId.value = ''
+  messages.value = []
+  conversations.value = []
+  void loadConversations()
 }
 
-async function loadTenants() {
+/** 真实创建会话：由后端生成 UUID 并落库（不再前端本地生成）。 */
+async function startNewChat() {
+  if (!tenantId.value) {
+    message.warning('请先填写租户 ID')
+    return
+  }
+  creating.value = true
   try {
-    const res = await api.get('/tenants', { params: { page: 1, size: 100 } })
-    tenants.value = res.data?.records || []
-    selectedTenantId.value = selectDefaultTenantId(tenants.value)
-    setStoredTenantId(selectedTenantId.value)
-  } catch {
-    tenants.value = []
+    const res = await api.post('/conversations', { tenantId: tenantId.value, channel: 'WEB' })
+    const vo = res.data
+    currentConvId.value = vo.conversationUuid
+    messages.value = []
+    streamText.value = ''
+    conversations.value.unshift({
+      uuid: vo.conversationUuid,
+      title: '新对话',
+      time: new Date().toLocaleTimeString('zh-CN'),
+    })
+  } catch (error: unknown) {
+    message.error(`创建会话失败：${httpErrorMessage(error, '网络错误')}`)
+  } finally {
+    creating.value = false
+  }
+}
+
+/** 切换会话：从数据库重新加载历史消息。 */
+async function switchConversation(uuid: string) {
+  currentConvId.value = uuid
+  streamText.value = ''
+  messages.value = []
+  try {
+    const res = await api.get(`/conversations/${uuid}/messages`)
+    messages.value = mapBackendMessages(res.data)
+  } catch (error: unknown) {
+    message.error(`加载历史消息失败：${httpErrorMessage(error, '网络错误')}`)
+  }
+  await nextTick()
+  scrollToBottom()
+}
+
+/** 会话列表：复用真实 /api/conversations 结果（不再依赖未实现的 /api/tenants）。 */
+async function loadConversations() {
+  if (!tenantId.value) return
+  try {
+    const res = await api.get('/conversations', {
+      params: { tenantId: tenantId.value, page: 1, size: 50 },
+    })
+    const records = res.data?.records || []
+    conversations.value = records.map((c: Record<string, unknown>) => ({
+      uuid: String(c.conversationUuid),
+      title: c.intentPrimary ? String(c.intentPrimary) : (c.customerName ? String(c.customerName) : '会话'),
+      time: String(c.lastMessageAt || c.startedAt || '').replace('T', ' ').slice(5, 16),
+    }))
+  } catch (error: unknown) {
+    message.error(`加载会话列表失败：${httpErrorMessage(error, '网络错误')}`)
   }
 }
 
 async function sendMessage(text?: string) {
   const userText = (text || inputText.value).trim()
   if (!userText || streaming.value) return
-  if (!currentConvId.value) startNewChat()
+  if (!currentConvId.value) {
+    await startNewChat()
+    if (!currentConvId.value) return
+  }
 
   messages.value.push({ role: 'user', text: userText })
   inputText.value = ''
@@ -186,55 +216,71 @@ async function sendMessage(text?: string) {
   scrollToBottom()
 
   try {
+    // EventSource 不支持 POST + JSON，这里必须用 fetch + ReadableStream
     const resp = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // 当前开发阶段：鉴权已下线，不再携带 Bearer Token。
-        // Authorization: `Bearer ${authStore.token}`,
-        'X-Tenant-Id': String(selectedTenantId.value),
+        'X-Tenant-Id': String(tenantId.value),
       },
       body: JSON.stringify({
         conversationUuid: currentConvId.value,
         message: userText,
-        intent: 'UNCLEAR',
+        intent: selectedIntent.value,
       }),
     })
 
     if (!resp.ok) {
-      // 当前开发阶段：登录与鉴权已下线，401/403 不再跳转 /login。
-      // if (resp.status === 401 || resp.status === 403) {
-      //   authStore.logout()
-      //   message.error('当前登录权限已失效，请重新登录')
-      //   router.push('/login')
-      //   return
-      // }
-      throw new Error(`HTTP ${resp.status}`)
+      // 校验失败 / 会话不存在 / 状态不允许等：后端返回 JSON 业务错误
+      throw new Error((await readErrorDetail(resp)) || `HTTP ${resp.status}`)
+    }
+    if (!resp.body) {
+      throw new Error('响应流为空')
     }
 
-    await consumeSse(resp, ({ event, data }) => {
-      if (event === 'status' || event === 'done' || data === '[DONE]') return
-      if (event === 'error') throw new Error(data)
-      if (event === 'final') streamText.value = data
-      else if (event === 'translated_delta' || event === 'message') streamText.value += data
+    const result = await consumeChatStream(resp, {
+      onDelta: (delta) => {
+        streamText.value += delta
+        void scrollToBottom()
+      },
+      onFinal: (finalText) => {
+        // final 为权威回答：直接覆盖增量累计，避免 "增量 + final" 重复拼接
+        streamText.value = finalText
+      },
     })
 
-    if (streamText.value) {
-      messages.value.push({ role: 'assistant', text: streamText.value })
-      streamText.value = ''
+    if (result.error) {
+      throw new Error(result.error)
     }
+    if (!result.receivedFinal) {
+      throw new Error('连接意外中断，未收到完整回复')
+    }
+
+    messages.value.push({ role: 'assistant', text: result.text })
+    streamText.value = ''
     await nextTick()
     scrollToBottom()
 
     const conversation = conversations.value.find((item) => item.uuid === currentConvId.value)
-    if (conversation && messages.value.length >= 2) {
+    if (conversation && conversation.title === '新对话') {
       conversation.title = userText.slice(0, 30) + (userText.length > 30 ? '...' : '')
     }
   } catch (error: unknown) {
+    // 失败：不把半截增量写成已完成回复；从数据库重新加载，保持与持久化一致
     message.error(`智能客服请求失败：${httpErrorMessage(error, '网络错误')}`)
     streamText.value = ''
+    await switchConversation(currentConvId.value)
   } finally {
     streaming.value = false
+  }
+}
+
+async function readErrorDetail(resp: Response): Promise<string> {
+  try {
+    const body = await resp.json()
+    return body?.message || ''
+  } catch {
+    return ''
   }
 }
 
@@ -242,20 +288,9 @@ function scrollToBottom() {
   scrollAnchor.value?.scrollIntoView({ behavior: 'smooth' })
 }
 
-// 当前开发阶段：登录与鉴权已下线，退出登录逻辑暂时停用。
-// function handleLogout() {
-//   authStore.logout()
-//   router.push('/login')
-// }
-
 onMounted(async () => {
-  // 当前开发阶段：不再校验登录状态，直接进入对话测试台。
-  // if (!authStore.isLoggedIn) {
-  //   router.push('/login')
-  //   return
-  // }
-  await loadTenants()
-  startNewChat()
+  setStoredTenantId(tenantId.value)
+  await loadConversations()
 })
 </script>
 
@@ -354,9 +389,20 @@ onMounted(async () => {
   border-bottom: 1px solid #e5e7eb;
   display: flex;
   flex-shrink: 0;
-  height: 60px;
+  gap: 12px;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 10px 20px;
+}
+
+.header-controls {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.tenant-hint {
+  color: #94a3b8;
+  font-size: 12px;
 }
 
 .messages-container {

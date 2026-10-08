@@ -51,6 +51,12 @@
             <artifactId>spring-boot-jackson2</artifactId>
         </dependency>
 
+        <!-- 参数校验（@Valid / @NotBlank / @Size，用于 ChatRequest） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
