@@ -13,14 +13,19 @@ import com.omnimerchant.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * ReAct Agent 主链（本阶段为最小版）。
@@ -111,10 +116,15 @@ public class ReActAgentService {
     private final ConversationMapper conversationMapper;
     private final ChatMessagePersistenceService chatMessagePersistenceService;
     private final ConversationMemoryService conversationMemoryService;
+    private final AgentTraceService agentTraceService;
 
     /** 实际使用的模型名（写入 chat_message.model_name，仅记录真实配置值）。 */
     @Value("${app.llm.deepseek.model:deepseek-chat}")
     private String modelName;
+
+    /** 模型提供商（写入 agent_run.model_provider，仅记录真实配置）。 */
+    @Value("${app.llm.deepseek.provider:deepseek}")
+    private String modelProvider;
 
     /**
      * 单轮对话入口。
@@ -188,28 +198,84 @@ public class ReActAgentService {
      */
     public Flux<ChatStreamEvent> chatEvents(Conversation conversation, String userMessage, String intent) {
         return Flux.defer(() -> {
+            // 一次正式请求 = 一个 AgentRun（唯一 traceId，绝不使用 conversationUuid 代替）
+            var traceId = agentTraceService.startChatRun(
+                    conversation.getTenantId(), conversation.getConversationUuid(), intent,
+                    modelProvider, modelName, userMessage);
+            var startedAt = System.currentTimeMillis();
+            var firstTokenAt = new AtomicReference<Long>(null);
+            var terminal = new AtomicBoolean(false);
+
             var plan = agentOrchestratorService.plan(intent, userMessage);
-            log.info("Agent 流式编排：intent={}, specialist={}, allowlist={}",
-                    intent, plan.specialistKey(), plan.toolAllowlist());
+            log.info("Agent 流式编排：traceId={}, intent={}, specialist={}, allowlist={}",
+                    traceId, intent, plan.specialistKey(), plan.toolAllowlist());
 
             if (plan.toolAllowlist().isEmpty()) {
+                terminal.set(true);
+                agentTraceService.failRunWithReason(traceId, "INTENT_UNSUPPORTED",
+                        "当前意图暂不支持自动处理", elapsed(startedAt));
                 return Flux.just(ChatStreamEvent.error(
                         "当前意图暂不支持自动处理（未识别到可用意图，或该意图尚未接入处理链）。"));
             }
 
+            // ROUTER 步：只记录当前请求已生成的 plan，不重新运行 Orchestrator
+            agentTraceService.addStep(traceId, "ROUTER", "supervisor_worker_plan", "SUCCESS",
+                    intent, plan.specialistKey(), null, 0,
+                    Map.of(
+                            "specialist", plan.specialistKey(),
+                            "toolAllowlist", plan.toolAllowlist(),
+                            "riskLevel", plan.riskLevel(),
+                            "requiresIdentityVerification", plan.requiresIdentityVerification(),
+                            "requiresApproval", plan.requiresApproval(),
+                            "recommendHumanHandoff", plan.recommendHumanHandoff()));
+
             var chatModel = chatModelProvider.getIfAvailable();
             if (chatModel == null) {
-                log.warn("流式对话被拒绝：未配置 DeepSeek 模型");
+                terminal.set(true);
+                log.warn("流式对话被拒绝：未配置 DeepSeek 模型，traceId={}", traceId);
+                agentTraceService.failRunWithReason(traceId, FailureAttributionService.MODEL_UNAVAILABLE,
+                        "未配置 DeepSeek 模型", elapsed(startedAt));
                 return Flux.just(ChatStreamEvent.error(
                         "未配置 DeepSeek 模型，请检查 application.yml 的 app.llm.deepseek.api-key。"));
             }
 
-            var scope = new CallScope(conversation.getTenantId(), intent, conversation.getConversationUuid());
-            var callbacks = agentExecutionGuardService
-                    .guardedCallbacks(toolCallbackProvider.getToolCallbacks(), plan)
-                    .stream()
-                    .map(callback -> ToolCallbackScope.wrap(callback, scope))
-                    .toList();
+            // MEMORY 步：读取最近 N 条历史（含本轮用户消息）
+            var historyStart = System.currentTimeMillis();
+            List<Message> history;
+            try {
+                history = conversationMemoryService.getRecentMessages(conversation, userMessage);
+            } catch (Exception e) {
+                terminal.set(true);
+                log.error("会话历史加载失败：traceId={}, error={}", traceId, e.getMessage());
+                agentTraceService.failRun(traceId, e, elapsed(startedAt));
+                return Flux.just(ChatStreamEvent.error(
+                        "无法读取会话历史，本次请求暂时无法处理，请稍后重试。"));
+            }
+            agentTraceService.addStep(traceId, "MEMORY", "load_recent_messages", "SUCCESS",
+                    conversation.getConversationUuid(),
+                    "historyCount=" + history.size(), null,
+                    (int) (System.currentTimeMillis() - historyStart),
+                    Map.of("historyCount", history.size(),
+                            "conversationUuid", conversation.getConversationUuid()));
+
+            var scope = new CallScope(conversation.getTenantId(), intent,
+                    conversation.getConversationUuid(), traceId);
+            List<ToolCallback> callbacks;
+            try {
+                callbacks = agentExecutionGuardService
+                        .guardedCallbacks(toolCallbackProvider.getToolCallbacks(), plan)
+                        .stream()
+                        .map(callback -> ToolCallbackScope.wrap(callback, scope,
+                                agentTraceService::recordBackfilledToolStep))
+                        .toList();
+            } catch (Exception e) {
+                terminal.set(true);
+                log.error("工具白名单装配失败：traceId={}, error={}", traceId, e.getMessage());
+                agentTraceService.failRunWithReason(traceId, FailureAttributionService.TOOL_EXCEPTION,
+                        e.getMessage(), elapsed(startedAt));
+                return Flux.just(ChatStreamEvent.error(
+                        "本次请求暂时无法处理，请稍后重试或转人工客服。"));
+            }
 
             var chatClient = ChatClient.builder(chatModel)
                     .defaultTools(callbacks)
@@ -217,13 +283,7 @@ public class ReActAgentService {
                     .build();
 
             var buffer = new StringBuilder();
-            var startedAt = System.currentTimeMillis();
             var finalized = new AtomicBoolean(false);
-
-            // 多轮记忆：读取最近 N 条历史（含本轮用户消息，已在 ChatController 落库）。
-            // 采用方案 A：历史包含当前用户消息，这里只调 .messages(history)，
-            // 不再追加 .user(userMessage)，否则模型会收到两条相同消息。
-            var history = conversationMemoryService.getRecentMessages(conversation, userMessage);
 
             var promptSpec = chatClient.prompt();
             var streamSpec = history.isEmpty()
@@ -234,6 +294,8 @@ public class ReActAgentService {
                     .content()
                     .filter(chunk -> chunk != null && !chunk.isEmpty())
                     .map(chunk -> {
+                        // 记录真实首个非空内容的时间点（不是总耗时，也不是固定值）
+                        firstTokenAt.compareAndSet(null, System.currentTimeMillis());
                         buffer.append(chunk);
                         return ChatStreamEvent.delta(chunk);
                     });
@@ -241,35 +303,64 @@ public class ReActAgentService {
             Flux<ChatStreamEvent> finalEvent = Flux.defer(() -> {
                 String finalText = buffer.toString();
                 if (finalText.isBlank()) {
+                    if (terminal.compareAndSet(false, true)) {
+                        agentTraceService.failRunWithReason(traceId,
+                                FailureAttributionService.MODEL_UNAVAILABLE,
+                                "模型未生成有效回复", elapsed(startedAt));
+                    }
                     return Flux.just(ChatStreamEvent.error("智能客服未能生成有效回复，请稍后重试。"));
                 }
-                // 只保存一次，避免重复订阅导致重复落库
                 if (!finalized.compareAndSet(false, true)) {
                     return Flux.empty();
                 }
                 ChatMessage savedAssistant;
                 try {
                     savedAssistant = chatMessagePersistenceService.saveAssistantMessage(
-                            conversation, finalText, modelName,
-                            (int) (System.currentTimeMillis() - startedAt));
+                            conversation, finalText, modelName, elapsed(startedAt));
                 } catch (Exception e) {
                     log.error("assistant 消息落库失败：conv={}, error={}",
                             conversation.getConversationUuid(), e.getMessage());
+                    if (terminal.compareAndSet(false, true)) {
+                        agentTraceService.failRun(traceId, e, elapsed(startedAt));
+                    }
                     return Flux.just(ChatStreamEvent.error("回复已生成但保存失败，请稍后重试。"));
                 }
-                // MySQL 保存成功后同步 Redis 记忆；失败不影响已落库的真实回复
+                // MySQL 成功后同步 Redis（失败不影响已落库的真实回复）
                 conversationMemoryService.syncAssistantMessage(conversation, savedAssistant);
+                // 只有在 assistant 已成功落库后，才把 AgentRun 标记为 SUCCESS
+                if (terminal.compareAndSet(false, true)) {
+                    agentTraceService.completeRun(traceId, finalText,
+                            firstTokenLatencyMs(startedAt, firstTokenAt.get()), elapsed(startedAt));
+                }
                 return Flux.just(ChatStreamEvent.finalAnswer(finalText));
             });
 
             return Flux.concat(Flux.just(ChatStreamEvent.status("PROCESSING")), deltas, finalEvent)
                     .onErrorResume(error -> {
-                        log.error("流式对话失败：conv={}, intent={}, error={}",
-                                conversation.getConversationUuid(), intent, error.getMessage());
+                        log.error("流式对话失败：traceId={}, conv={}, intent={}, error={}",
+                                traceId, conversation.getConversationUuid(), intent, error.getMessage());
+                        if (terminal.compareAndSet(false, true)) {
+                            agentTraceService.failRun(traceId, error, elapsed(startedAt));
+                        }
                         return Flux.just(ChatStreamEvent.error(
                                 "本次请求暂时无法处理，请稍后重试或转人工客服。"));
+                    })
+                    // 兜底：客户端取消等导致既未 SUCCESS 也未 FAILED 时，避免长期 RUNNING
+                    .doFinally(signal -> {
+                        if (terminal.compareAndSet(false, true)) {
+                            agentTraceService.failRunIfStillRunning(traceId, "CANCELLED",
+                                    "客户端中断或执行未正常结束", elapsed(startedAt));
+                        }
                     });
         });
+    }
+
+    private Integer elapsed(long startedAt) {
+        return (int) (System.currentTimeMillis() - startedAt);
+    }
+
+    private Integer firstTokenLatencyMs(long startedAt, Long firstTokenAt) {
+        return firstTokenAt == null ? null : (int) (firstTokenAt - startedAt);
     }
 
     /** 中文 System Prompt + 追加当前 Specialist 的运行时信息（不暴露全量 Tool 名单）。 */

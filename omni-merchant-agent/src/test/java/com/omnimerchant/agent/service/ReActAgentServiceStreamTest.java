@@ -79,8 +79,12 @@ class ReActAgentServiceStreamTest {
         // POLICY_QA 只允许 refundPolicyRAG，护栏会校验白名单工具必须存在
         when(toolProvider.getToolCallbacks()).thenReturn(new org.springframework.ai.tool.ToolCallback[]{
                 stub("refundPolicyRAG")});
+        // 轨迹服务在流式语义测试中不作断言，用 mock 并让其 startChatRun 返回固定 traceId
+        var traceService = mock(AgentTraceService.class);
+        when(traceService.startChatRun(any(), anyString(), anyString(), any(), any(), anyString()))
+                .thenReturn("trace-test");
         return new ReActAgentService(
-                provider(model), toolProvider, orchestrator, guard, null, persistence, memory);
+                provider(model), toolProvider, orchestrator, guard, null, persistence, memory, traceService);
     }
 
     /** 默认记忆桩：返回「历史 + 当前用户消息」，模拟 ChatController 先落库的语义。 */

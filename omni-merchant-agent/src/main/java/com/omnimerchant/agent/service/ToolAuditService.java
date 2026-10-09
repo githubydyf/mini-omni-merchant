@@ -3,8 +3,10 @@ package com.omnimerchant.agent.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omnimerchant.agent.context.CallContextHolder;
+import com.omnimerchant.agent.context.TraceContextHolder;
 import com.omnimerchant.agent.entity.ToolCallLog;
 import com.omnimerchant.agent.mapper.ToolCallLogMapper;
+import com.omnimerchant.agent.tool.ToolTraceMarker;
 import com.omnimerchant.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,10 +34,12 @@ import java.util.function.Supplier;
  *
  * <p>最小适配：
  * <ul>
- *   <li>原项目调用 {@code agentTraceService.recordToolStep(log)}，Agent Trace 模块尚未复现，
- *       已去掉（保留 TODO）。</li>
+ *   <li>已恢复对 {@code agentTraceService.recordToolStep(log)} 的调用（阶段 5）：
+ *       每次成功写入 tool_call_log 后同步产生一条 TOOL 轨迹。</li>
  *   <li>tenantId 取自 {@link TenantContextHolder}；当前未启用多租户拦截，通常为 null。</li>
  *   <li>conversationUuid 取自 {@link CallContextHolder}，无上下文时按原项目回退为 {@code "unknown"}。</li>
+ *   <li>traceId 优先取自 {@link TraceContextHolder}（工具线程上由 CallScope 绑定），
+ *       其次 MDC，最后才回退随机 UUID。</li>
  * </ul>
  */
 @Slf4j
@@ -45,6 +49,7 @@ public class ToolAuditService {
 
     private final ToolCallLogMapper mapper;
     private final ObjectMapper objectMapper;
+    private final AgentTraceService agentTraceService;
 
     public <T> T record(String toolName, Map<String, Object> params, Supplier<T> supplier) {
         var started = LocalDateTime.now();
@@ -91,14 +96,26 @@ public class ToolAuditService {
             log.setRetryCount(0);
             log.setIsRetry(0);
             mapper.insert(log);
-            // TODO Agent Trace 模块复现后，恢复 agentTraceService.recordToolStep(log)
+            // 阶段 5：工具调用落库后，同步产生一条真实 TOOL 轨迹（bestEffort，失败不影响业务）
+            agentTraceService.recordToolStep(log);
+            // 打标记：告诉 ToolCallbackScope 本次调用已由审计层记账，避免重复记录 TOOL 步
+            ToolTraceMarker.mark(log.getToolCallId());
         } catch (Exception e) {
             log.warn("写入工具审计日志失败 {}：{}", toolName, e.getMessage());
         }
     }
 
+    /**
+     * traceId 解析顺序：工具线程上下文 → MDC → 随机 UUID。
+     *
+     * <p>工具在 Reactor boundedElastic 线程执行，MDC 不跨线程，因此优先读
+     * {@link TraceContextHolder}（由 CallScope 在工具线程上绑定本轮 AgentRun 的 traceId）。
+     */
     private String resolveTraceId() {
-        var traceId = MDC.get("traceId");
+        var traceId = TraceContextHolder.get();
+        if (traceId == null || traceId.isBlank()) {
+            traceId = MDC.get("traceId");
+        }
         return traceId == null || traceId.isBlank() ? UUID.randomUUID().toString() : traceId;
     }
 

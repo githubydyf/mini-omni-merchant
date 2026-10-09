@@ -35,7 +35,7 @@ class ToolAuditServiceTest {
     @Test
     void shouldRecordSuccessWithResultAndMetadata() {
         var mapper = mock(ToolCallLogMapper.class);
-        var service = new ToolAuditService(mapper, new ObjectMapper());
+        var service = new ToolAuditService(mapper, new ObjectMapper(), mock(AgentTraceService.class));
         TenantContextHolder.set(1001L);
 
         var result = service.record("queryOrder", params("orderId", "#1001"), () -> "OK");
@@ -62,7 +62,7 @@ class ToolAuditServiceTest {
     @Test
     void shouldRecordFailureAndRethrow() {
         var mapper = mock(ToolCallLogMapper.class);
-        var service = new ToolAuditService(mapper, new ObjectMapper());
+        var service = new ToolAuditService(mapper, new ObjectMapper(), mock(AgentTraceService.class));
 
         assertThatThrownBy(() -> service.record("queryOrder", params("orderId", "#1"), () -> {
             throw new IllegalStateException("boom");
@@ -80,7 +80,7 @@ class ToolAuditServiceTest {
     void auditWriteFailureMustNotBreakBusinessResult() {
         var mapper = mock(ToolCallLogMapper.class);
         doThrow(new RuntimeException("db down")).when(mapper).insert(any(ToolCallLog.class));
-        var service = new ToolAuditService(mapper, new ObjectMapper());
+        var service = new ToolAuditService(mapper, new ObjectMapper(), mock(AgentTraceService.class));
 
         // 审计写库失败，业务结果照常返回
         var result = service.record("queryOrder", params("orderId", "#1001"), () -> "OK");

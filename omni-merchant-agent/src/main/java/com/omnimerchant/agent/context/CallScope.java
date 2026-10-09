@@ -1,24 +1,33 @@
 package com.omnimerchant.agent.context;
 
-import com.omnimerchant.agent.context.CallContextHolder;
 import com.omnimerchant.tenant.context.TenantContextHolder;
 
 /**
  * 请求作用域上下文快照。
  *
- * <p>用于把一次请求的 tenantId / intent / conversationUuid 显式绑定到
+ * <p>用于把一次请求的 tenantId / intent / conversationUuid / traceId 显式绑定到
  * <b>真正执行 Tool 的线程</b>上，并在执行结束后清理。
+ *
+ * <p>traceId 的加入（阶段 5）：工具在 Reactor 的 boundedElastic 线程执行，MDC 不会
+ * 跨线程传播，若只靠 MDC，工具审计会退化成随机 traceId，导致
+ * {@code agent_run.trace_id} 与 {@code tool_call_log.trace_id} 对不上。
  */
 public final class CallScope {
 
     private final Long tenantId;
     private final String intent;
     private final String conversationUuid;
+    private final String traceId;
 
     public CallScope(Long tenantId, String intent, String conversationUuid) {
+        this(tenantId, intent, conversationUuid, null);
+    }
+
+    public CallScope(Long tenantId, String intent, String conversationUuid, String traceId) {
         this.tenantId = tenantId;
         this.intent = intent;
         this.conversationUuid = conversationUuid;
+        this.traceId = traceId;
     }
 
     public Long tenantId() {
@@ -33,16 +42,24 @@ public final class CallScope {
         return conversationUuid;
     }
 
+    public String traceId() {
+        return traceId;
+    }
+
     /** 在当前线程绑定上下文。 */
     public void bind() {
         TenantContextHolder.set(tenantId);
         CallContextHolder.set(intent, conversationUuid);
+        if (traceId != null && !traceId.isBlank()) {
+            TraceContextHolder.set(traceId);
+        }
     }
 
     /** 在当前线程清理上下文。 */
     public void clear() {
         TenantContextHolder.clear();
         CallContextHolder.clear();
+        TraceContextHolder.clear();
     }
 
     /**
@@ -55,15 +72,17 @@ public final class CallScope {
     public <T> T runInScope(java.util.function.Supplier<T> action) {
         var previousTenant = TenantContextHolder.get();
         var previousCall = CallContextHolder.get();
+        var previousTrace = TraceContextHolder.get();
         bind();
         try {
             return action.get();
         } finally {
-            restore(previousTenant, previousCall);
+            restore(previousTenant, previousCall, previousTrace);
         }
     }
 
-    private void restore(Long previousTenant, CallContextHolder.CallContext previousCall) {
+    private void restore(Long previousTenant, CallContextHolder.CallContext previousCall,
+                         String previousTrace) {
         if (previousTenant == null) {
             TenantContextHolder.clear();
         } else {
@@ -73,6 +92,11 @@ public final class CallScope {
             CallContextHolder.clear();
         } else {
             CallContextHolder.set(previousCall.intent(), previousCall.conversationUuid());
+        }
+        if (previousTrace == null) {
+            TraceContextHolder.clear();
+        } else {
+            TraceContextHolder.set(previousTrace);
         }
     }
 }
