@@ -1,6 +1,7 @@
 package com.omnimerchant.agent.controller;
 
 import com.omnimerchant.agent.dto.ChatRequest;
+import com.omnimerchant.agent.memory.ConversationMemoryService;
 import com.omnimerchant.agent.service.ChatMessagePersistenceService;
 import com.omnimerchant.agent.service.ConversationLifecycleService;
 import com.omnimerchant.agent.service.ReActAgentService;
@@ -39,13 +40,16 @@ public class ChatController {
     private final ReActAgentService reActAgentService;
     private final ConversationLifecycleService conversationLifecycleService;
     private final ChatMessagePersistenceService chatMessagePersistenceService;
+    private final ConversationMemoryService conversationMemoryService;
 
     public ChatController(ReActAgentService reActAgentService,
                           ConversationLifecycleService conversationLifecycleService,
-                          ChatMessagePersistenceService chatMessagePersistenceService) {
+                          ChatMessagePersistenceService chatMessagePersistenceService,
+                          ConversationMemoryService conversationMemoryService) {
         this.reActAgentService = reActAgentService;
         this.conversationLifecycleService = conversationLifecycleService;
         this.chatMessagePersistenceService = chatMessagePersistenceService;
+        this.conversationMemoryService = conversationMemoryService;
     }
 
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -62,7 +66,10 @@ public class ChatController {
                 ? request.intent() : "UNCLEAR";
 
         // 2. 先持久化 user 消息：模型失败 / 客户端断开也要保留
-        chatMessagePersistenceService.saveUserMessage(conversation, request.message(), intent);
+        var savedUserMessage = chatMessagePersistenceService.saveUserMessage(
+                conversation, request.message(), intent);
+        // MySQL 保存成功后同步 Redis 短期记忆（尽力而为；失败时下轮从 MySQL 重建）
+        conversationMemoryService.syncUserMessage(conversation, savedUserMessage);
 
         log.info("Chat 流式开始：tenant={}, conv={}, intent={}, msgLen={}",
                 tenantId, request.conversationUuid(), intent, request.message().length());

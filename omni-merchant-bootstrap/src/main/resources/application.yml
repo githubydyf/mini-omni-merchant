@@ -5,6 +5,12 @@ spring:
   application:
     name: mini-omni-merchant
 
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+
   # 关掉 Spring AI 对 OpenAI 的自动配置：
   # DeepSeek ChatModel 与 Qwen Embedding 都由项目手动构建（OpenAI 兼容），
   # 不需要 chat/embedding/audio/image/moderation 这些自动配置的 Bean。
@@ -74,3 +80,14 @@ app:
   retrieval:
     min-support-score: 45
     sufficient-support-score: 70
+
+  # 短期对话记忆（RedisChatMemory）——只保存最近上下文；
+  # MySQL 的 chat_message 仍是完整历史与前端/Inbox 的权威来源。
+  chat:
+    memory:
+      # 每次提供给模型的最近历史条数（对齐原项目「最近 12 条」）。
+      last-n: 12
+      # Redis 列表长度上限，超出后只保留最近若干条，防止无限增长。
+      max-messages: 50
+      # 每次成功更新记忆后刷新 TTL。
+      ttl-days: 7

@@ -5,6 +5,8 @@ import com.omnimerchant.agent.entity.Conversation;
 import com.omnimerchant.agent.entity.ChatMessage;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -14,6 +16,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,6 +68,11 @@ class ReActAgentServiceStreamTest {
     }
 
     private ReActAgentService service(ChatModel model, ChatMessagePersistenceService persistence) {
+        return service(model, persistence, memory(defaultHistory()));
+    }
+
+    private ReActAgentService service(ChatModel model, ChatMessagePersistenceService persistence,
+                                      com.omnimerchant.agent.memory.ConversationMemoryService memory) {
         var orchestrator = new AgentOrchestratorService();
         var guard = new AgentExecutionGuardService();
         var toolProvider = mock(ToolCallbackProvider.class);
@@ -72,7 +80,26 @@ class ReActAgentServiceStreamTest {
         when(toolProvider.getToolCallbacks()).thenReturn(new org.springframework.ai.tool.ToolCallback[]{
                 stub("refundPolicyRAG")});
         return new ReActAgentService(
-                provider(model), toolProvider, orchestrator, guard, null, persistence);
+                provider(model), toolProvider, orchestrator, guard, null, persistence, memory);
+    }
+
+    /** 默认记忆桩：返回「历史 + 当前用户消息」，模拟 ChatController 先落库的语义。 */
+    private com.omnimerchant.agent.memory.ConversationMemoryService memory(List<Message> history) {
+        var m = mock(com.omnimerchant.agent.memory.ConversationMemoryService.class);
+        when(m.getRecentMessages(any(), anyString())).thenReturn(history);
+        return m;
+    }
+
+    private List<Message> defaultHistory() {
+        return List.of(new UserMessage("退货期限是多少天？"));
+    }
+
+    /** 历史为：USER / ASSISTANT / USER(当前问题)。 */
+    private List<Message> historyWithPriorTurn() {
+        return List.of(
+                new UserMessage("我的订单 #1001 发货了吗？"),
+                new AssistantMessage("订单 #1001 已发货。"),
+                new UserMessage("那它什么时候到？"));
     }
 
     private static org.springframework.ai.tool.ToolCallback stub(String name) {
@@ -176,5 +203,65 @@ class ReActAgentServiceStreamTest {
 
         assertThat(events).hasSize(1);
         assertThat(events.get(0).type()).isEqualTo("error");
+    }
+
+    @Test
+    void shouldSendFullHistoryToModelIncludingCurrentMessageOnce() {
+        // 捕获真正传给模型的 Prompt
+        var captured = new AtomicReference<Prompt>();
+        var model = capturingModel(captured);
+        var persistence = mock(ChatMessagePersistenceService.class);
+
+        var events = service(model, persistence, memory(historyWithPriorTurn()))
+                .chatEvents(conversation(), "那它什么时候到？", "POLICY_QA")
+                .collectList()
+                .block();
+
+        assertThat(events).isNotNull();
+        // Prompt 里会先插入 defaultSystem 的系统消息，这里只校验对话消息部分
+        var instructions = captured.get().getInstructions().stream()
+                .filter(m -> m.getMessageType() != org.springframework.ai.chat.messages.MessageType.SYSTEM)
+                .toList();
+        assertThat(instructions).extracting(m -> m.getMessageType().name())
+                .containsExactly("USER", "ASSISTANT", "USER");
+        assertThat(instructions).extracting(m -> m.getText())
+                .containsExactly("我的订单 #1001 发货了吗？", "订单 #1001 已发货。", "那它什么时候到？");
+        // 当前用户消息只出现一次
+        assertThat(instructions.stream()
+                .filter(m -> "那它什么时候到？".equals(m.getText())).count()).isEqualTo(1);
+    }
+
+    @Test
+    void assistantReplyShouldBeSyncedToMemoryAfterPersistence() {
+        var memoryMock = memory(defaultHistory());
+        var persistence = mock(ChatMessagePersistenceService.class);
+        var saved = new ChatMessage();
+        saved.setRole("assistant");
+        saved.setContent(CANNED);
+        when(persistence.saveAssistantMessage(any(), anyString(), any(), any())).thenReturn(saved);
+
+        service(chunkedModel("七天", "无理由退货。"), persistence, memoryMock)
+                .chatEvents(conversation(), "退货期限是多少天？", "POLICY_QA")
+                .collectList()
+                .block();
+
+        verify(memoryMock).syncAssistantMessage(any(), any());
+    }
+
+    /** 桩模型：记录收到的 Prompt 并返回固定分片。 */
+    private ChatModel capturingModel(AtomicReference<Prompt> captured) {
+        return new ChatModel() {
+            @Override
+            public ChatResponse call(Prompt prompt) {
+                captured.set(prompt);
+                return response(CANNED);
+            }
+
+            @Override
+            public Flux<ChatResponse> stream(Prompt prompt) {
+                captured.set(prompt);
+                return Flux.just(response("七天无理由退货。"));
+            }
+        };
     }
 }

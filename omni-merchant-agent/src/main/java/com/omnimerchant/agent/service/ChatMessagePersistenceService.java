@@ -86,6 +86,19 @@ public class ChatMessagePersistenceService {
                 .orderByAsc(ChatMessage::getCreatedAt));
     }
 
+    /**
+     * 会话当前最大的 seqNo（无消息时返回 null）。
+     *
+     * <p>供对话记忆做一致性校验：Redis 记录的最后同步 seqNo 与之相等才认为缓存不落后。
+     */
+    public Integer latestSeqNo(String conversationUuid) {
+        var last = chatMessageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getConversationUuid, conversationUuid)
+                .orderByDesc(ChatMessage::getSeqNo)
+                .last("LIMIT 1"));
+        return last == null ? null : last.getSeqNo();
+    }
+
     // ==================================================================
     // 内部实现
     // ==================================================================
