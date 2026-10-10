@@ -83,8 +83,11 @@ class ReActAgentServiceStreamTest {
         var traceService = mock(AgentTraceService.class);
         when(traceService.startChatRun(any(), anyString(), anyString(), any(), any(), anyString()))
                 .thenReturn("trace-test");
+        // 状态机在流式语义测试中不作断言；startRun/completeRun/failRun 均为无副作用桩
+        var stateMachine = mock(AgentStateMachineService.class);
         return new ReActAgentService(
-                provider(model), toolProvider, orchestrator, guard, null, persistence, memory, traceService);
+                provider(model), toolProvider, orchestrator, guard, null, persistence, memory,
+                traceService, stateMachine);
     }
 
     /** 默认记忆桩：返回「历史 + 当前用户消息」，模拟 ChatController 先落库的语义。 */

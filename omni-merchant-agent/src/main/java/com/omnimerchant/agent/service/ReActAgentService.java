@@ -117,6 +117,7 @@ public class ReActAgentService {
     private final ChatMessagePersistenceService chatMessagePersistenceService;
     private final ConversationMemoryService conversationMemoryService;
     private final AgentTraceService agentTraceService;
+    private final AgentStateMachineService agentStateMachineService;
 
     /** 实际使用的模型名（写入 chat_message.model_name，仅记录真实配置值）。 */
     @Value("${app.llm.deepseek.model:deepseek-chat}")
@@ -206,6 +207,11 @@ public class ReActAgentService {
             var firstTokenAt = new AtomicReference<Long>(null);
             var terminal = new AtomicBoolean(false);
 
+            // 作用域提前构建：状态机与工具都需要在正确租户线程上下文下执行
+            // （Reactor 流式执行不在请求线程，ThreadLocal 不会自动传播）
+            var scope = new CallScope(conversation.getTenantId(), intent,
+                    conversation.getConversationUuid(), traceId);
+
             var plan = agentOrchestratorService.plan(intent, userMessage);
             log.info("Agent 流式编排：traceId={}, intent={}, specialist={}, allowlist={}",
                     traceId, intent, plan.specialistKey(), plan.toolAllowlist());
@@ -216,6 +222,23 @@ public class ReActAgentService {
                         "当前意图暂不支持自动处理", elapsed(startedAt));
                 return Flux.just(ChatStreamEvent.error(
                         "当前意图暂不支持自动处理（未识别到可用意图，或该意图尚未接入处理链）。"));
+            }
+
+            // 状态机启动：NEW/可继续状态 → AI_TRIAGE → AI_WORKING
+            // 会话已人工接管/已关闭时会被拒绝，此时终止本次调用（不调模型、不执行工具）
+            try {
+                scope.runInScope(() -> {
+                    agentStateMachineService.startRun(conversation.getTenantId(),
+                            conversation.getConversationUuid(), traceId, plan.specialistKey());
+                    return null;
+                });
+            } catch (Exception e) {
+                terminal.set(true);
+                log.warn("状态机启动被拒绝：traceId={}, error={}", traceId, e.getMessage());
+                agentTraceService.failRunWithReason(traceId, "STATE_REJECTED",
+                        e.getMessage(), elapsed(startedAt));
+                return Flux.just(ChatStreamEvent.error(
+                        "当前会话状态不允许 AI 继续处理，请联系人工客服。"));
             }
 
             // ROUTER 步：只记录当前请求已生成的 plan，不重新运行 Orchestrator
@@ -229,12 +252,18 @@ public class ReActAgentService {
                             "requiresApproval", plan.requiresApproval(),
                             "recommendHumanHandoff", plan.recommendHumanHandoff()));
 
+            // STATE 步：真实记录本轮进入 AI_WORKING
+            agentTraceService.addStep(traceId, "STATE", "AI_WORKING", "SUCCESS",
+                    AgentStateMachineService.AI_TRIAGE, AgentStateMachineService.AI_WORKING,
+                    null, 0, Map.of("specialist", plan.specialistKey()));
+
             var chatModel = chatModelProvider.getIfAvailable();
             if (chatModel == null) {
                 terminal.set(true);
                 log.warn("流式对话被拒绝：未配置 DeepSeek 模型，traceId={}", traceId);
                 agentTraceService.failRunWithReason(traceId, FailureAttributionService.MODEL_UNAVAILABLE,
                         "未配置 DeepSeek 模型", elapsed(startedAt));
+                failState(scope, conversation, traceId, "未配置模型");
                 return Flux.just(ChatStreamEvent.error(
                         "未配置 DeepSeek 模型，请检查 application.yml 的 app.llm.deepseek.api-key。"));
             }
@@ -248,6 +277,7 @@ public class ReActAgentService {
                 terminal.set(true);
                 log.error("会话历史加载失败：traceId={}, error={}", traceId, e.getMessage());
                 agentTraceService.failRun(traceId, e, elapsed(startedAt));
+                failState(scope, conversation, traceId, "会话历史加载失败");
                 return Flux.just(ChatStreamEvent.error(
                         "无法读取会话历史，本次请求暂时无法处理，请稍后重试。"));
             }
@@ -258,21 +288,25 @@ public class ReActAgentService {
                     Map.of("historyCount", history.size(),
                             "conversationUuid", conversation.getConversationUuid()));
 
-            var scope = new CallScope(conversation.getTenantId(), intent,
-                    conversation.getConversationUuid(), traceId);
             List<ToolCallback> callbacks;
             try {
                 callbacks = agentExecutionGuardService
                         .guardedCallbacks(toolCallbackProvider.getToolCallbacks(), plan)
                         .stream()
                         .map(callback -> ToolCallbackScope.wrap(callback, scope,
-                                agentTraceService::recordBackfilledToolStep))
+                                agentTraceService::recordBackfilledToolStep,
+                                // 工具成功结果 → 状态机推进（每次工具执行恰好一次，不重跑工具）
+                                (toolName, output) -> agentStateMachineService.toolSucceeded(
+                                        conversation.getTenantId(),
+                                        conversation.getConversationUuid(),
+                                        traceId, toolName, output)))
                         .toList();
             } catch (Exception e) {
                 terminal.set(true);
                 log.error("工具白名单装配失败：traceId={}, error={}", traceId, e.getMessage());
                 agentTraceService.failRunWithReason(traceId, FailureAttributionService.TOOL_EXCEPTION,
                         e.getMessage(), elapsed(startedAt));
+                failState(scope, conversation, traceId, "工具装配失败");
                 return Flux.just(ChatStreamEvent.error(
                         "本次请求暂时无法处理，请稍后重试或转人工客服。"));
             }
@@ -307,6 +341,7 @@ public class ReActAgentService {
                         agentTraceService.failRunWithReason(traceId,
                                 FailureAttributionService.MODEL_UNAVAILABLE,
                                 "模型未生成有效回复", elapsed(startedAt));
+                        failState(scope, conversation, traceId, "模型未生成有效回复");
                     }
                     return Flux.just(ChatStreamEvent.error("智能客服未能生成有效回复，请稍后重试。"));
                 }
@@ -322,6 +357,7 @@ public class ReActAgentService {
                             conversation.getConversationUuid(), e.getMessage());
                     if (terminal.compareAndSet(false, true)) {
                         agentTraceService.failRun(traceId, e, elapsed(startedAt));
+                        failState(scope, conversation, traceId, "回复保存失败");
                     }
                     return Flux.just(ChatStreamEvent.error("回复已生成但保存失败，请稍后重试。"));
                 }
@@ -331,6 +367,9 @@ public class ReActAgentService {
                 if (terminal.compareAndSet(false, true)) {
                     agentTraceService.completeRun(traceId, finalText,
                             firstTokenLatencyMs(startedAt, firstTokenAt.get()), elapsed(startedAt));
+                    // 状态机收尾：AI_WORKING → WAITING_CUSTOMER
+                    // （若本轮已真实创建审批申请/人工升级，当前状态已不是 AI_WORKING，不会被覆盖）
+                    completeState(scope, conversation, traceId);
                 }
                 return Flux.just(ChatStreamEvent.finalAnswer(finalText));
             });
@@ -341,18 +380,49 @@ public class ReActAgentService {
                                 traceId, conversation.getConversationUuid(), intent, error.getMessage());
                         if (terminal.compareAndSet(false, true)) {
                             agentTraceService.failRun(traceId, error, elapsed(startedAt));
+                            failState(scope, conversation, traceId, error.getMessage());
                         }
                         return Flux.just(ChatStreamEvent.error(
                                 "本次请求暂时无法处理，请稍后重试或转人工客服。"));
                     })
-                    // 兜底：客户端取消等导致既未 SUCCESS 也未 FAILED 时，避免长期 RUNNING
+                    // 兜底：客户端取消等导致既未 SUCCESS 也未 FAILED 时，避免长期 RUNNING 或 AI_WORKING
                     .doFinally(signal -> {
                         if (terminal.compareAndSet(false, true)) {
                             agentTraceService.failRunIfStillRunning(traceId, "CANCELLED",
                                     "客户端中断或执行未正常结束", elapsed(startedAt));
+                            failState(scope, conversation, traceId, "客户端中断或执行未正常结束");
                         }
                     });
         });
+    }
+
+    /** 状态机收尾为 WAITING_CUSTOMER（bestEffort，失败不影响业务）。 */
+    private void completeState(CallScope scope, Conversation conversation, String traceId) {
+        safeStateChange(scope, traceId, () -> agentStateMachineService.completeRun(
+                conversation.getTenantId(), conversation.getConversationUuid(), traceId));
+    }
+
+    /** 状态机失败收尾（bestEffort，失败不影响业务）。 */
+    private void failState(CallScope scope, Conversation conversation, String traceId, String reason) {
+        safeStateChange(scope, traceId, () -> agentStateMachineService.failRun(
+                conversation.getTenantId(), conversation.getConversationUuid(), traceId, reason));
+    }
+
+    /**
+     * 状态变更保护：状态机失败不能破坏已经完成的业务回复，只记录告警。
+     *
+     * <p>注意区分两个维度：{@code AgentRun.status} 由 AgentTraceService 负责，
+     * 本方法只处理会话工作流状态。
+     */
+    private void safeStateChange(CallScope scope, String traceId, Runnable action) {
+        try {
+            scope.runInScope(() -> {
+                action.run();
+                return null;
+            });
+        } catch (Exception e) {
+            log.warn("状态机收尾失败（不影响业务）：traceId={}, error={}", traceId, e.getMessage());
+        }
     }
 
     private Integer elapsed(long startedAt) {

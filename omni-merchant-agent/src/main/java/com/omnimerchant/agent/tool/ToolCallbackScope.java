@@ -35,21 +35,35 @@ public final class ToolCallbackScope implements ToolCallback {
     private final ToolCallback delegate;
     private final CallScope scope;
     private final ToolTraceRecorder traceRecorder;
+    private final ToolOutcomeListener outcomeListener;
 
-    private ToolCallbackScope(ToolCallback delegate, CallScope scope, ToolTraceRecorder traceRecorder) {
+    private ToolCallbackScope(ToolCallback delegate, CallScope scope,
+                              ToolTraceRecorder traceRecorder, ToolOutcomeListener outcomeListener) {
         this.delegate = delegate;
         this.scope = scope;
         this.traceRecorder = traceRecorder;
+        this.outcomeListener = outcomeListener;
     }
 
     /** 用给定作用域包装一个 ToolCallback（不补记轨迹）。 */
     public static ToolCallback wrap(ToolCallback delegate, CallScope scope) {
-        return new ToolCallbackScope(delegate, scope, null);
+        return new ToolCallbackScope(delegate, scope, null, null);
     }
 
     /** 用给定作用域包装，并在需要时为未审计工具补记轨迹。 */
     public static ToolCallback wrap(ToolCallback delegate, CallScope scope, ToolTraceRecorder traceRecorder) {
-        return new ToolCallbackScope(delegate, scope, traceRecorder);
+        return new ToolCallbackScope(delegate, scope, traceRecorder, null);
+    }
+
+    /**
+     * 用给定作用域包装，并同时挂载轨迹记录器与工具结果监听器。
+     *
+     * <p>结果监听器（供状态机使用）<b>每次工具执行恰好触发一次</b>，与轨迹记录的
+     * 去重标记无关，避免"审计层触发一次、包装器又触发一次"。
+     */
+    public static ToolCallback wrap(ToolCallback delegate, CallScope scope,
+                                    ToolTraceRecorder traceRecorder, ToolOutcomeListener outcomeListener) {
+        return new ToolCallbackScope(delegate, scope, traceRecorder, outcomeListener);
     }
 
     @Override
@@ -100,6 +114,16 @@ public final class ToolCallbackScope implements ToolCallback {
                             failure == null, toolInput,
                             failure == null ? result : failure.getMessage(), latencyMs));
                 }
+                // 工具结果监听器：每次执行恰好一次，通知状态机做真实业务状态推进
+                // （不重新执行工具；在作用域内调用以保证租户上下文可读）
+                if (outcomeListener != null && failure == null) {
+                    final var toolName = delegate.getToolDefinition().name();
+                    final var finalOutput = result;
+                    scope.runInScope(() -> {
+                        outcomeListener.onToolCompleted(toolName, finalOutput);
+                        return null;
+                    });
+                }
             } finally {
                 ToolTraceMarker.clear();
             }
@@ -122,5 +146,15 @@ public final class ToolCallbackScope implements ToolCallback {
     @FunctionalInterface
     public interface ToolTraceRecorder {
         void record(ToolTrace toolTrace);
+    }
+
+    /**
+     * 工具结果监听器：工具成功返回后调用一次，供状态机推进业务状态。
+     *
+     * <p>只观察结果，<b>不重新执行工具</b>。
+     */
+    @FunctionalInterface
+    public interface ToolOutcomeListener {
+        void onToolCompleted(String toolName, String output);
     }
 }
