@@ -8,6 +8,7 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 /**
  * Tool 隔离验收测试（对应任务 §9 / §26）。
@@ -19,7 +20,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AgentToolIsolationTest {
 
     private final AgentOrchestratorService orchestrator = new AgentOrchestratorService();
-    private final AgentExecutionGuardService guard = new AgentExecutionGuardService();
+    // 本测试只验证注册期白名单过滤，不涉及锁/幂等，用 mock 依赖构造
+    private final AgentExecutionGuardService guard = new AgentExecutionGuardService(
+            mock(org.springframework.data.redis.core.StringRedisTemplate.class),
+            mock(com.omnimerchant.agent.mapper.AgentIdempotencyGuardMapper.class),
+            new com.fasterxml.jackson.databind.ObjectMapper());
 
     /** 当前已注册的全部业务 Tool（与 ToolCallbackConfig 一致）。 */
     private final ToolCallback[] allCallbacks = {

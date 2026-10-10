@@ -91,3 +91,12 @@ app:
       max-messages: 50
       # 每次成功更新记忆后刷新 TTL。
       ttl-days: 7
+
+  # Agent 执行守卫：Redis 会话互斥锁。
+  # 锁 TTL 短于 SSE 超时（300s），因此配合定期续期覆盖整个执行期。
+  agent:
+    conversation-lock:
+      # 初始锁有效期（秒）；执行中会被续期刷新。
+      ttl-seconds: 90
+      # 续期间隔（秒）：仅当锁仍属于当前请求时才刷新 TTL。
+      renew-interval-seconds: 30

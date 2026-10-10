@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -107,6 +108,17 @@ public class ReActAgentService {
             - 历史中的退款申请、地址修改申请等，不能被当成已经执行成功的外部操作。
             - 不得把历史中模型曾经做出的错误描述，视为真实订单或政策依据。
             - 当历史信息存在歧义时，应要求客户补充必要的信息。
+
+            售后副作用与幂等规则：
+            - 当客户明确提出退货、退款、补发、修改地址或人工升级请求时，
+              应根据真实业务情况使用允许的工具。
+            - 不得重复提交同一售后申请。
+            - 如果工具返回 DUPLICATE_BLOCKED，表示系统检测到重复请求，本次没有再次执行对应业务操作；
+              不能将其解释为退款成功、补发成功或地址修改成功。
+            - 如果工具返回 PENDING_HUMAN_APPROVAL，只能告知客户申请已提交、等待人工审批。
+            - 对于仅咨询政策或询问能否退款的情况，不得擅自创建退款申请。
+            - 如果当前会话正在处理另一条请求，应等待该请求完成，而不是并行触发业务工具。
+            - 所有业务结果必须依据真实工具返回值，不得编造。
             """;
 
     private final ObjectProvider<ChatModel> chatModelProvider;
@@ -199,6 +211,45 @@ public class ReActAgentService {
      */
     public Flux<ChatStreamEvent> chatEvents(Conversation conversation, String userMessage, String intent) {
         return Flux.defer(() -> {
+            // 一、先获取 Redis 会话锁：同一会话同一时刻只允许一个 Agent Run。
+            // 锁获取失败（含 Redis 不可用，fail-closed）时不得启动执行，也不得创建假的成功轨迹。
+            // 注意：acquire 需要租户上下文，而本方法可能运行在 Reactor 线程上（ThreadLocal 不传播），
+            // 因此先用一个仅含租户/会话的作用域绑定上下文再取锁。
+            var acquireScope = new CallScope(conversation.getTenantId(), intent,
+                    conversation.getConversationUuid());
+            AgentExecutionGuardService.ConversationLease lease;
+            try {
+                lease = acquireScope.runInScope(() -> agentExecutionGuardService.acquire(
+                        conversation.getTenantId(), conversation.getConversationUuid()));
+            } catch (Exception e) {
+                throw new AgentLockUnavailableException(e.getMessage(), e);
+            }
+            // 二、用 Flux.using 管理租约生命周期：SUCCESS/FAILED/CANCELLED/TIMEOUT 都会释放锁
+            return Flux.using(
+                    () -> lease,
+                    heldLease -> runTurn(conversation, userMessage, intent, heldLease),
+                    agentExecutionGuardService::release);
+        }).onErrorResume(error -> {
+            // 锁冲突或锁不可用：明确告知，不进入模型与工具
+            log.warn("Agent 执行被拒绝（会话锁）：conv={}, error={}",
+                    conversation.getConversationUuid(), error.getMessage());
+            return Flux.just(ChatStreamEvent.error(
+                    "当前会话正在处理上一条消息，请等待回复完成后重试。"));
+        });
+    }
+
+    /** 会话锁不可用（被占用或 Redis 故障）时抛出，用于与普通业务失败区分。 */
+    private static final class AgentLockUnavailableException extends RuntimeException {
+        private AgentLockUnavailableException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /** 持锁执行一轮 Agent（锁在外层 Flux.using 中获取与释放）。 */
+    private Flux<ChatStreamEvent> runTurn(Conversation conversation, String userMessage,
+                                          String intent,
+                                          AgentExecutionGuardService.ConversationLease lease) {
+        return Flux.defer(() -> {
             // 一次正式请求 = 一个 AgentRun（唯一 traceId，绝不使用 conversationUuid 代替）
             var traceId = agentTraceService.startChatRun(
                     conversation.getTenantId(), conversation.getConversationUuid(), intent,
@@ -290,16 +341,24 @@ public class ReActAgentService {
 
             List<ToolCallback> callbacks;
             try {
+                // 包装顺序（自外向内）：ToolCallbackScope → GuardedToolCallback → 真实 Tool
+                //   外层 Scope：绑定租户/traceId 上下文、记录轨迹、推进状态机
+                //   内层 Guard：运行时二次校验 + 副作用幂等（幂等先于真实业务工具）
                 callbacks = agentExecutionGuardService
                         .guardedCallbacks(toolCallbackProvider.getToolCallbacks(), plan)
                         .stream()
+                        .map(agentExecutionGuardService::guard)
                         .map(callback -> ToolCallbackScope.wrap(callback, scope,
                                 agentTraceService::recordBackfilledToolStep,
-                                // 工具成功结果 → 状态机推进（每次工具执行恰好一次，不重跑工具）
+                                // 工具成功结果 → 状态机推进（每次真实执行恰好一次，不重跑工具）
                                 (toolName, output) -> agentStateMachineService.toolSucceeded(
                                         conversation.getTenantId(),
                                         conversation.getConversationUuid(),
-                                        traceId, toolName, output)))
+                                        traceId, toolName, output),
+                                // 被 Guard 拦截 → 记录 GUARD 步（不伪造成功的 TOOL 步）
+                                blocked -> agentTraceService.recordGuardBlockedStep(
+                                        blocked.traceId(), blocked.toolName(), blocked.toolCallId(),
+                                        blocked.reason(), blocked.output(), blocked.latencyMs())))
                         .toList();
             } catch (Exception e) {
                 terminal.set(true);
@@ -319,7 +378,17 @@ public class ReActAgentService {
             var buffer = new StringBuilder();
             var finalized = new AtomicBoolean(false);
 
-            var promptSpec = chatClient.prompt();
+            // 服务端构建 ToolContext：Guard 的运行时二次校验与幂等只信任这里的字段，
+            // 不信任模型生成的参数或客户端传入的头。
+            var toolContext = new HashMap<String, Object>();
+            toolContext.put("tenantId", conversation.getTenantId());
+            toolContext.put("conversationUuid", conversation.getConversationUuid());
+            toolContext.put("traceId", traceId);
+            toolContext.put("intent", intent);
+            toolContext.put("allowedTools", plan.toolAllowlist());
+            toolContext.put("conversationLease", lease);
+
+            var promptSpec = chatClient.prompt().toolContext(toolContext);
             var streamSpec = history.isEmpty()
                     ? promptSpec.user(userMessage).stream()
                     : promptSpec.messages(history).stream();

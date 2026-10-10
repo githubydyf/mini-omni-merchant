@@ -74,7 +74,15 @@ class ReActAgentServiceStreamTest {
     private ReActAgentService service(ChatModel model, ChatMessagePersistenceService persistence,
                                       com.omnimerchant.agent.memory.ConversationMemoryService memory) {
         var orchestrator = new AgentOrchestratorService();
-        var guard = new AgentExecutionGuardService();
+        // 真实 Guard + mock Redis：让 acquire 成功返回租约（锁语义本身由专门测试覆盖）
+        var redis = mock(org.springframework.data.redis.core.StringRedisTemplate.class);
+        var valueOps = mock(org.springframework.data.redis.core.ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(valueOps);
+        when(valueOps.setIfAbsent(anyString(), anyString(), any(java.time.Duration.class)))
+                .thenReturn(true);
+        var guard = new AgentExecutionGuardService(redis,
+                mock(com.omnimerchant.agent.mapper.AgentIdempotencyGuardMapper.class),
+                new com.fasterxml.jackson.databind.ObjectMapper());
         var toolProvider = mock(ToolCallbackProvider.class);
         // POLICY_QA 只允许 refundPolicyRAG，护栏会校验白名单工具必须存在
         when(toolProvider.getToolCallbacks()).thenReturn(new org.springframework.ai.tool.ToolCallback[]{

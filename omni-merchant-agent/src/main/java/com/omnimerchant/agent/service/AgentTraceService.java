@@ -192,6 +192,32 @@ public class AgentTraceService {
     }
 
     /**
+     * 记录一条「被 Guard 拦截」的轨迹（重复请求 / 锁失效）。
+     *
+     * <p>与真实 TOOL 步区分：{@code stepType=GUARD} 且 {@code status=BLOCKED}；
+     * 不增加 {@code toolCallCount}（它只统计 {@code tool_call_log} 的真实执行次数）。
+     */
+    public void recordGuardBlockedStep(String traceId, String toolName, String toolCallId,
+                                       String reason, String output, Integer latencyMs) {
+        if (traceId == null || traceId.isBlank()) {
+            return;
+        }
+        try {
+            var run = runMapper.selectOne(new LambdaQueryWrapper<AgentRun>()
+                    .eq(AgentRun::getTraceId, traceId)
+                    .last("FOR UPDATE"));
+            if (run == null) {
+                return;
+            }
+            // 显式分类为 GUARD_BLOCKED，避免被误读成工具执行异常
+            addStepInternal(traceId, run, "GUARD", toolName, "BLOCKED",
+                    null, output, toolCallId, latencyMs, "GUARD_BLOCKED", Map.of("reason", reason));
+        } catch (Exception e) {
+            log.warn("GUARD 轨迹写入失败（不影响业务）：traceId={}, error={}", traceId, e.getMessage());
+        }
+    }
+
+    /**
      * 记录一条由 {@code ToolCallbackScope} 补记的工具轨迹（用于未走审计的工具，如 PolicyTools）。
      *
      * <p>为避免与审计层重复，按 toolCallId 去重：同一 toolCallId 已存在 TOOL 步则跳过。
@@ -423,8 +449,8 @@ public class AgentTraceService {
                 .replaceAll("(?i)(bearer)\\s+[A-Za-z0-9._-]{8,}", "$1 [token]")
                 // 邮箱
                 .replaceAll("(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", "[email]")
-                // 银行卡号（13~19 位连续数字）
-                .replaceAll("\\b(?:\\d[ -]*?){13,19}\\b", "[card]")
+                // 银行卡号：15~19 位连续数字（13/14 位与时间戳等业务编号重叠，避免误伤）
+                .replaceAll("\\b(?:\\d[ -]*?){15,19}\\b", "[card]")
                 // 手机号（+ 或 1 开头的 11 位或更长）
                 .replaceAll("\\+?\\d[\\d\\s().-]{7,}\\b", "[phone]");
     }
