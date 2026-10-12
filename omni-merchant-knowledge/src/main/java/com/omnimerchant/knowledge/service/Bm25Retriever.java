@@ -10,10 +10,14 @@ import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.Term;
 import org.apache.lucene.queryparser.classic.QueryParser;
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.similarities.BM25Similarity;
 import org.apache.lucene.store.ByteBuffersDirectory;
@@ -40,6 +44,10 @@ import java.util.List;
  *
  * <p>一致性约定：知识库 reload 完成后必须调用 {@link #rebuildIndex()}，
  * 否则会出现“PgVector 已更新但 BM25 仍是旧索引”的问题。
+ *
+ * <p><b>租户隔离</b>：索引为每个 chunk 记录 {@code tenantId} 字段，查询时追加
+ * {@code tenantId ∈ {0, 当前租户}} 的过滤条件，只召回全局公开语料与当前租户私有语料。
+ * 缺少租户上下文时只允许全局语料，绝不返回全部语料。
  */
 @Slf4j
 @Component
@@ -92,7 +100,8 @@ public class Bm25Retriever {
                     id,
                     content,
                     metadata ->> 'source' AS source,
-                    metadata ->> 'chunk_index' AS chunkIndex
+                    metadata ->> 'chunk_index' AS chunkIndex,
+                    metadata ->> 'tenant_id' AS tenantId
                 FROM %s
                 """.formatted(tableName);
 
@@ -101,6 +110,7 @@ public class Bm25Retriever {
             String content = rs.getString("content");
             String source = rs.getString("source");
             String chunkIndex = rs.getString("chunkIndex");
+            String tenantId = rs.getString("tenantId");
 
             if (source == null) {
                 source = "unknown";
@@ -108,7 +118,11 @@ public class Bm25Retriever {
             if (chunkIndex == null) {
                 chunkIndex = "-1";
             }
-            return new PolicyChunk(id, source, chunkIndex, content);
+            // 未标注 tenant_id 的旧 chunk 一律按全局语料处理（tenantId=0）
+            if (tenantId == null || tenantId.isBlank()) {
+                tenantId = String.valueOf(RagTenantScope.GLOBAL_TENANT_ID);
+            }
+            return new PolicyChunk(id, source, chunkIndex, tenantId, content);
         });
 
         log.info("从 {} 读取 Chunk 数量：{}", tableName, chunks.size());
@@ -126,6 +140,8 @@ public class Bm25Retriever {
                 luceneDocument.add(new StringField("id", chunk.id(), Field.Store.YES));
                 luceneDocument.add(new StringField("source", chunk.source(), Field.Store.YES));
                 luceneDocument.add(new StringField("chunkIndex", chunk.chunkIndex(), Field.Store.YES));
+                // 租户字段：仅作为过滤条件，供租户可见性校验使用
+                luceneDocument.add(new StringField("tenantId", chunk.tenantId(), Field.Store.YES));
                 // TextField 经 SmartChineseAnalyzer 分词，BM25 检索该字段
                 luceneDocument.add(new TextField("content", chunk.content(), Field.Store.YES));
 
@@ -153,7 +169,7 @@ public class Bm25Retriever {
     }
 
     /**
-     * BM25 查询。
+     * BM25 查询（带租户可见性过滤）。
      *
      * <p>索引未就绪或参数非法时返回空列表（由上层决定是否视为“无证据”）。
      */
@@ -172,7 +188,22 @@ public class Bm25Retriever {
 
         QueryParser parser = new QueryParser("content", analyzer);
         // 转义 Lucene 特殊语法（+ - : ( ) 等），防止用户输入导致解析异常
-        Query query = parser.parse(QueryParser.escape(question));
+        Query contentQuery = parser.parse(QueryParser.escape(question));
+
+        // 租户可见性：content 命中 AND (tenantId == 0 OR tenantId == 当前租户)
+        BooleanQuery.Builder tenantFilterBuilder = new BooleanQuery.Builder()
+                .add(new TermQuery(new Term("tenantId", String.valueOf(RagTenantScope.GLOBAL_TENANT_ID))),
+                        BooleanClause.Occur.SHOULD)
+                .setMinimumNumberShouldMatch(1);
+        var current = com.omnimerchant.tenant.context.TenantContextHolder.get();
+        if (current != null) {
+            tenantFilterBuilder.add(new TermQuery(new Term("tenantId", String.valueOf(current))),
+                    BooleanClause.Occur.SHOULD);
+        }
+        Query query = new BooleanQuery.Builder()
+                .add(contentQuery, BooleanClause.Occur.MUST)
+                .add(tenantFilterBuilder.build(), BooleanClause.Occur.MUST)
+                .build();
 
         TopDocs topDocs = searcher.search(query, topK);
 
@@ -206,6 +237,7 @@ public class Bm25Retriever {
             String id,
             String source,
             String chunkIndex,
+            String tenantId,
             String content
     ) {
     }

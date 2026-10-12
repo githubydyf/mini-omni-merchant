@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -19,6 +21,28 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /**
+     * 认证失败（未登录 / 令牌无效）：401。
+     *
+     * <p>与方法级 @PreAuthorize 及过滤器链保持一致，避免被通用异常处理器误判为 500。
+     */
+    @ExceptionHandler(AuthenticationException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public R<Void> handleAuthentication(AuthenticationException e) {
+        log.warn("认证失败: {}", e.getMessage());
+        return R.fail("401", e.getMessage() == null ? "未认证或认证已失效" : e.getMessage());
+    }
+
+    /**
+     * 授权失败（权限不足）：403，与 401 明确区分。
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public R<Void> handleAccessDenied(AccessDeniedException e) {
+        log.warn("授权失败: {}", e.getMessage());
+        return R.fail("403", "无权执行该操作");
+    }
 
     @ExceptionHandler(BusinessException.class)
     @ResponseStatus(HttpStatus.OK)

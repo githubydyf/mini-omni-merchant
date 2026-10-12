@@ -99,6 +99,17 @@
         </dependency>
 
         <!--
+            方法级授权注解（@PreAuthorize）与 @AuthenticationPrincipal：
+            业务 Controller 恢复真实登录身份后的操作者来源。
+            仅需要 spring-security-core（注解 + SecurityContextHolder），
+            完整 web 安全链路（FilterChain）由 bootstrap 提供。
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+        </dependency>
+
+        <!--
             知识库模块：Agent 依赖 Knowledge（PolicyTools → refundPolicyRAG）。
             依赖方向必须单向：agent → knowledge。
             不允许 knowledge → agent（否则形成循环依赖）。

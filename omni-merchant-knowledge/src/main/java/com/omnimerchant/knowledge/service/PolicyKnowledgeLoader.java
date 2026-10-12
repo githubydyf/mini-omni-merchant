@@ -36,8 +36,10 @@ import java.util.Map;
  * <p><b>注意</b>：资源目录已从旧单体的错误拼写 {@code konwledges} 统一为
  * {@code knowledge}。
  *
- * <p><b>Tenant 边界</b>：当前政策知识为开发阶段共享政策语料，未按租户隔离；
- * metadata 暂不加 tenant_id。完整租户知识隔离属于后续阶段。
+ * <p><b>Tenant 边界</b>：仓库内置的 policy/*.txt 全部标记为<b>共享演示语料</b>
+ * （metadata {@code tenant_id = 0}，即 {@link RagTenantScope#GLOBAL_TENANT_ID}），
+ * 对所有租户可见；<b>禁止</b>将租户私有政策写入该共享索引。需要租户私有政策时，
+ * 应写入带真实 {@code tenant_id} 的独立文档，由检索路径按租户过滤。
  */
 @Slf4j
 @Component
@@ -106,10 +108,11 @@ public class PolicyKnowledgeLoader {
     private int reloadResource(Resource resource) throws Exception {
 
         String source = resource.getFilename();
-        log.info("开始更新政策文件：{}", source);
+        log.info("开始更新政策文件（共享演示语料）：{}", source);
 
-        // 1. 删除该文件以前的旧 Chunk
-        vectorStore.delete("source == '" + source + "'");
+        // 1. 删除该文件以前的旧 Chunk（仅限全局演示语料，避免误删租户私有文档）
+        vectorStore.delete("source == '" + source + "' && tenant_id == '"
+                + RagTenantScope.GLOBAL_TENANT_ID + "'");
         log.info("已删除旧向量数据：{}", source);
 
         // 2. 读取最新文件
@@ -119,6 +122,7 @@ public class PolicyKnowledgeLoader {
         Document originalDocument = Document.builder()
                 .text(text)
                 .metadata("source", source)
+                .metadata("tenant_id", RagTenantScope.metadataTenantId())
                 .build();
 
         // 3. TokenTextSplitter：面向中文政策文本，使用中文标点作为分隔
@@ -133,7 +137,7 @@ public class PolicyKnowledgeLoader {
 
         List<Document> chunks = splitter.apply(List.of(originalDocument));
 
-        // 4. 补充 chunk_index
+        // 4. 补充 chunk_index，并显式标注 tenant_id=0（全局共享语料）
         List<Document> chunkDocuments = new ArrayList<>();
         for (int i = 0; i < chunks.size(); i++) {
             Document chunk = chunks.get(i);
@@ -141,6 +145,7 @@ public class PolicyKnowledgeLoader {
                     .text(chunk.getText())
                     .metadata(chunk.getMetadata())
                     .metadata("source", source)
+                    .metadata("tenant_id", RagTenantScope.metadataTenantId())
                     .metadata("chunk_index", i)
                     .build();
             chunkDocuments.add(newChunk);

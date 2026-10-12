@@ -1,15 +1,6 @@
 <!--
-  ============================================================
-  当前开发阶段：登录已下线。
-
-  /login 路由已在 src/router/index.ts 中注释，
-  本页面不会被访问；页面本身完整保留，方便恢复鉴权后直接启用。
-
-  恢复时：
-    1. 取消 src/router/index.ts 中 /login 路由的注释；
-    2. 恢复 src/stores/auth.ts 底部注释的原认证实现；
-    3. 恢复 src/api/index.ts 中的请求/响应拦截器。
-  ============================================================
+  商家 / 平台人员登录页（阶段 10 已恢复）。
+  登录成功后由 Pinia Auth Store 保存 Access / Refresh Token，并跳转 /admin。
 -->
 <template>
   <main class="login-page">

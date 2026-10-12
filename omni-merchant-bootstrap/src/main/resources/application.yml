@@ -40,8 +40,24 @@ mybatis-plus:
 
 # ============================================================
 # 本项目统一配置来源（正式入口：omni-merchant-bootstrap）。
-# 本阶段为本地开发联调，全部直接写死在此文件，不经过环境变量。
+# 本阶段为本地开发联调，其余配置直接写在此文件，不经过环境变量。
+# 仅认证相关密钥 / 引导账号必须来自环境变量，不允许提交真实值到 Git。
 # ============================================================
+admin:
+  # 首次启动平台管理员引导账号：从环境变量读取（未配置且尚无平台管理员时启动失败）。
+  email: ${ADMIN_EMAIL:}
+  password: ${ADMIN_PASSWORD:}
+  # JWT 签名密钥：必须来自环境变量 JWT_SECRET（长度至少 32 字节），缺失则启动失败。
+  jwt-secret: ${JWT_SECRET:}
+  # 允许换钥：旧密钥仅在轮换过渡期使用。
+  jwt-previous-secret: ${JWT_PREVIOUS_SECRET:}
+  # Access Token 有效期（毫秒），默认 1 天。
+  jwt-expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  # Refresh Token 有效期（毫秒），默认 30 天。
+  refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:2592000000}
+  issuer: omnimerchant-admin
+  audience: omnimerchant-admin-api
+
 app:
 
   # DeepSeek（OpenAI 兼容接口）—— Agent 主链固定使用该模型。

@@ -3,6 +3,7 @@ package com.omnimerchant.knowledge.controller;
 import com.omnimerchant.common.dto.R;
 import com.omnimerchant.knowledge.service.PolicyKnowledgeLoader;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,13 +13,18 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 知识库重建接口（开发/运维期）。
+ * 知识库重建接口（运维期）。
  *
  * <p>迁移自旧单体 {@code RagAdminController}，返回体统一使用本项目的 {@link R}。
+ *
+ * <p><b>安全</b>：写入共享演示语料属于平台级知识运维操作，仅允许平台管理员执行；
+ * 不允许普通租户用户重建全局知识索引。租户私有知识隔离尚未在本阶段落地，
+ * 因此不提供面向租户的私有知识写入入口。
  */
 @RestController
 @RequestMapping("/api/rag")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('PLATFORM_ADMIN')")
 public class RagAdminController {
 
     private final PolicyKnowledgeLoader policyKnowledgeLoader;

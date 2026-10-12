@@ -11,7 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -24,11 +23,13 @@ import reactor.core.scheduler.Schedulers;
  * {@code POST /api/chat/stream}，{@code produces=text/event-stream}，
  * 事件名 {@code status / translated_delta / final / error}。
  *
- * <p>本阶段差异：
+ * <p><b>安全边界</b>：
  * <ul>
- *   <li>不依赖 JWT；开发阶段允许通过 {@code X-Tenant-Id} 传入租户，但<b>仅用于一致性校验</b>，
- *       权威租户以数据库会话行为准（见 {@link ConversationLifecycleService}）。</li>
- *   <li>会话必须真实存在；不存在时返回明确的业务错误（不自动编造会话）。</li>
+ *   <li>需要合法 JWT（{@code /api/chat} 属受保护路径，无令牌返回 401）；</li>
+ *   <li>租户来自已验证请求的 {@link TenantContextHolder}（{@code TenantInterceptor} 校验
+ *       {@code X-Tenant-Id} 属于 JWT membership 后设置），<b>不</b>直接信任请求头；</li>
+ *   <li>会话的 {@code tenantId} 必须与已验证租户一致，否则在启动 Agent 前即拒绝，
+ *       绝不允许跨租户读取历史或发送消息；</li>
  *   <li>user 消息在订阅模型流之前落库；assistant 消息由 ReActAgentService 在成功时落库。</li>
  * </ul>
  */
@@ -53,14 +54,14 @@ public class ChatController {
     }
 
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@Valid @RequestBody ChatRequest request,
-                             @RequestHeader(value = "X-Tenant-Id", required = false) Long headerTenantId) {
+    public SseEmitter stream(@Valid @RequestBody ChatRequest request) {
         // 5 分钟超时，与原项目一致
         var emitter = new SseEmitter(300_000L);
 
-        // 1. 会话与租户/状态校验（失败直接抛业务异常，由全局处理器返回 JSON，未开始 SSE）
+        // 1. 会话与租户/状态校验：租户来自已验证上下文，必须与会话租户一致
+        //    （失败直接抛业务异常，由全局处理器返回 JSON，未开始 SSE）
         var conversation = conversationLifecycleService.requireForAi(
-                request.conversationUuid(), headerTenantId);
+                request.conversationUuid(), TenantContextHolder.get());
         var tenantId = conversation.getTenantId();
         var intent = request.intent() != null && !request.intent().isBlank()
                 ? request.intent() : "UNCLEAR";
@@ -73,9 +74,6 @@ public class ChatController {
 
         log.info("Chat 流式开始：tenant={}, conv={}, intent={}, msgLen={}",
                 tenantId, request.conversationUuid(), intent, request.message().length());
-
-
-
 
         // 客户端断开时释放资源
         emitter.onCompletion(() -> log.info("Chat 流式结束：conv={}", request.conversationUuid()));

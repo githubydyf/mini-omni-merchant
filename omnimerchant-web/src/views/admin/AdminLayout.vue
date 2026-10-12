@@ -865,16 +865,59 @@
         </div>
 
 
-        <!--
-          当前开发阶段：
-          不显示租户
-          不显示用户
-          不显示角色
-          不显示退出登录
+        <div class="topbar-actions">
 
-          后续恢复身份认证后，
-          可以重新放回 topbar-actions。
-        -->
+          <a-select
+              v-if="tenantOptions.length"
+              v-model:value="selectedTenantId"
+              class="tenant-select"
+              :options="tenantOptions"
+              :loading="tenantLoading"
+              @change="changeTenant"
+          />
+
+          <a-tag v-else-if="tenantLoading" color="processing">
+            加载租户
+          </a-tag>
+
+          <a-dropdown placement="bottomRight">
+
+            <a-button type="text" class="user-trigger">
+
+              <span class="user-avatar">
+                {{ userInitial }}
+              </span>
+
+              <span v-if="!isCompact" class="user-copy">
+                <strong>{{ authStore.email || "当前用户" }}</strong>
+                <small>{{ roleLabel }}</small>
+              </span>
+
+              <DownOutlined/>
+
+            </a-button>
+
+            <template #overlay>
+
+              <a-menu>
+
+                <a-menu-item key="chat" @click="router.push('/chat')">
+                  知识库对话测试
+                </a-menu-item>
+
+                <a-menu-divider/>
+
+                <a-menu-item key="logout" danger @click="handleLogout">
+                  退出登录
+                </a-menu-item>
+
+              </a-menu>
+
+            </template>
+
+          </a-dropdown>
+
+        </div>
 
       </header>
 
@@ -921,17 +964,32 @@ import {
 } from "vue-router";
 
 import {
+  DownOutlined,
   MenuFoldOutlined,
   MenuOutlined,
   MenuUnfoldOutlined,
   MessageOutlined,
 } from "@ant-design/icons-vue";
 
+import api from "@/api";
+
+import { useAuthStore } from "@/stores/auth";
+
+import {
+  getStoredTenantId,
+  setStoredTenantId,
+} from "@/utils/tenant";
+
+import { tenantOptionLabel } from "@/utils/display";
+
 import {
   adminNavigation,
+  canViewAdminPage,
   compatibilityAdminPages,
   type AdminNavItem,
 } from "@/config/adminNavigation";
+
+import type { TenantSummary } from "@/types/contracts";
 
 
 /* ============================== */
@@ -941,6 +999,8 @@ import {
 const route = useRoute();
 
 const router = useRouter();
+
+const authStore = useAuthStore();
 
 
 /* ============================== */
@@ -957,22 +1017,24 @@ const viewportWidth = ref(
 
 const openKeys = ref<string[]>([]);
 
+/* 顶部租户选择：普通用户只能选自己有 membership 的租户；平台管理员可选全部租户 */
+const tenantLoading = ref(false);
+
+const selectedTenantId = ref<number | string | undefined>(
+    getStoredTenantId() || undefined
+);
+
+const tenantOptions = ref<Array<{ value: number | string; label: string }>>([]);
+
 
 /* ============================== */
-/* 导航 */
+/* 导航（按角色过滤） */
 /* ============================== */
 
 /**
- * 当前开发阶段：
- *
- * 不进行角色权限过滤。
- *
- * 所有 adminNavigation 中存在的菜单
- * 都直接显示。
- *
- * 后续恢复：
- *
- * canViewAdminPage(...)
+ * 只显示当前登录用户有权查看的菜单：
+ * platformAdmin 可见全部；普通用户按 roles / platformAdminOnly 过滤。
+ * 前端过滤只改善体验，真正安全边界在后端。
  */
 const visibleNavigation = computed(() =>
 
@@ -997,20 +1059,18 @@ const visibleNavigation = computed(() =>
 );
 
 
-/**
- * 当前阶段不检查：
- *
- * TENANT_ADMIN
- * SUPPORT_AGENT
- * SUPPORT_SUPERVISOR
- * READ_ONLY_AUDITOR
- * platformAdmin
- */
 function visibleChildren(
     items?: AdminNavItem[]
 ) {
 
-  return items || [];
+  return (items || []).filter(
+      (item) =>
+          canViewAdminPage(
+              item,
+              authStore.roles,
+              authStore.platformAdmin
+          )
+  );
 
 }
 
@@ -1167,6 +1227,116 @@ function updateViewport() {
 
 
 /* ============================== */
+/* 当前用户展示信息 */
+/* ============================== */
+
+const isCompact = computed(
+    () =>
+        viewportWidth.value < 1120
+);
+
+const userInitial = computed(() =>
+    (authStore.email || "O").trim().charAt(0).toUpperCase()
+);
+
+const roleLabel = computed(() => {
+
+  if (authStore.platformAdmin) return "平台管理员";
+
+  const labels: Record<string, string> = {
+    TENANT_ADMIN: "租户管理员",
+    SUPPORT_SUPERVISOR: "客服主管",
+    SUPPORT_AGENT: "客服",
+    READ_ONLY_AUDITOR: "只读审计员",
+  };
+
+  return (
+      authStore.roles.map((role) => labels[role] || role).join("、") ||
+      "租户成员"
+  );
+
+});
+
+
+/* ============================== */
+/* 租户选择 */
+/* ============================== */
+
+function changeTenant(value: number | string) {
+
+  setStoredTenantId(value);
+
+  selectedTenantId.value = value;
+
+  // 切换租户后重新加载当前页面数据
+  router.go(0);
+
+}
+
+
+/**
+ * 加载可选租户：
+ * - 平台管理员：/api/tenants 获取全部租户；
+ * - 普通用户：只能选择 JWT 中声明的自有租户，不能手动输入其他租户。
+ */
+async function loadTenants() {
+
+  tenantLoading.value = true;
+
+  try {
+
+    if (authStore.platformAdmin) {
+
+      const response = await api.get("/tenants", {
+        params: { page: 1, size: 100 },
+      });
+
+      tenantOptions.value = (response.data?.records || []).map(
+          (tenant: TenantSummary) => ({
+            value: tenant.id,
+            label: tenantOptionLabel(tenant),
+          })
+      );
+
+    } else {
+
+      tenantOptions.value = authStore.tenantIds.map((id) => ({
+        value: id,
+        label: `租户 #${id}`,
+      }));
+
+    }
+
+    const current = selectedTenantId.value;
+
+    const fallback =
+        tenantOptions.value.find((option) => option.value === current)?.value ||
+        tenantOptions.value[0]?.value;
+
+    if (fallback !== undefined) {
+      setStoredTenantId(fallback);
+      selectedTenantId.value = fallback;
+    }
+
+  } finally {
+
+    tenantLoading.value = false;
+
+  }
+
+}
+
+
+async function handleLogout() {
+
+  await authStore.logout();
+
+  router.push("/login");
+
+}
+
+
+/* ============================== */
 /* 生命周期 */
 /* ============================== */
 
@@ -1202,6 +1372,9 @@ onMounted(() => {
     ];
 
   }
+
+
+  void loadTenants();
 
 });
 
@@ -1477,6 +1650,108 @@ onBeforeUnmount(() => {
   gap: 12px;
 
   min-width: 0;
+
+}
+
+
+/* ============================== */
+/* Topbar 操作区（租户选择 / 当前用户） */
+/* ============================== */
+
+.topbar {
+
+  justify-content: space-between;
+
+  gap: 20px;
+
+}
+
+.topbar-actions,
+.user-trigger {
+
+  display: flex;
+
+  align-items: center;
+
+}
+
+.topbar-actions {
+
+  gap: 10px;
+
+}
+
+.tenant-select {
+
+  width: 210px;
+
+}
+
+.user-trigger {
+
+  height: 44px;
+
+  gap: 9px;
+
+  padding: 4px 7px;
+
+}
+
+.user-avatar {
+
+  width: 30px;
+
+  height: 30px;
+
+  display: grid;
+
+  place-items: center;
+
+  border-radius: 50%;
+
+  background: #eaf2ff;
+
+  color: #1769ff;
+
+  font-size: 12px;
+
+  font-weight: 800;
+
+}
+
+.user-copy {
+
+  display: flex;
+
+  flex-direction: column;
+
+  max-width: 170px;
+
+  align-items: flex-start;
+
+}
+
+.user-copy strong {
+
+  max-width: 100%;
+
+  color: #344054;
+
+  font-size: 12px;
+
+  overflow: hidden;
+
+  text-overflow: ellipsis;
+
+  white-space: nowrap;
+
+}
+
+.user-copy small {
+
+  color: #98a2b3;
+
+  font-size: 11px;
 
 }
 

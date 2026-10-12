@@ -19,17 +19,70 @@
     <packaging>jar</packaging>
 
     <description>
-        多租户模块
-
+        多租户模块：Tenant 实体 / Mapper / Service / Controller、租户上下文、
+        租户拦截器（校验 JWT principal 对 X-Tenant-Id 的访问权）。
     </description>
 
 
     <dependencies>
 
+        <!-- 统一响应体 R<T> 与常量 -->
+        <dependency>
+            <groupId>com.omnimerchant</groupId>
+            <artifactId>omni-merchant-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- 租户上下文 TransmittableThreadLocal（支持子线程 / Reactor 透传） -->
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>transmittable-thread-local</artifactId>
             <version>2.14.3</version>
+        </dependency>
+
+        <!-- MyBatis-Plus：Tenant 实体 / Mapper / Service（与 agent 模块版本保持一致） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+            <version>3.5.17</version>
+        </dependency>
+
+        <!-- TenantInterceptor 使用 HandlerInterceptor；TenantController 使用 @RestController -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- TenantInterceptor 使用 Jackson ObjectMapper 输出 JSON 错误体 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-jackson2</artifactId>
+        </dependency>
+
+        <!-- TenantController 请求体参数校验（@Valid / @NotBlank） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- TenantController 方法级权限（@PreAuthorize hasRole('PLATFORM_ADMIN')） -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
 
     </dependencies>

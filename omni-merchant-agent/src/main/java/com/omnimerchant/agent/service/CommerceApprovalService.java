@@ -122,12 +122,13 @@ public class CommerceApprovalService {
     @Transactional
     public HelpdeskDtos.ActionRequestVO approve(String source, Long id, HelpdeskDtos.ActionDecisionRequest request) {
         // 审批只改内部状态；不调用任何外部电商写 API。
-        requireActor(request == null ? null : request.actorId());
+        // 操作者必须来自已验证 JWT，绝不使用请求体中的 actorId。
+        var actorId = requireActor();
         if ("return_request".equals(source)) {
             var row = requireReturn(id);
             row.setStatus(3);                       // 3 = approved（见类注释的状态定案）
             row.setResolution("APPROVED_MANUAL");
-            row.setResolutionNote(request.note());
+            row.setResolutionNote(request == null ? null : request.note());
             returnRequestMapper.updateById(row);
             // TODO 审计模块复现后，恢复 supportAuditService.record(...)
             return toReturnView(row);
@@ -135,7 +136,7 @@ public class CommerceApprovalService {
         if ("commerce_action_request".equals(source)) {
             var row = requireAction(id);
             row.setStatus("APPROVED_MANUAL");
-            row.setApprovedBy(request.actorId());
+            row.setApprovedBy(actorId);
             row.setApprovedAt(LocalDateTime.now());
             row.setExternalResult("Manual approval recorded; no external ecommerce write was executed by AI.");
             actionRequestMapper.updateById(row);
@@ -148,12 +149,12 @@ public class CommerceApprovalService {
 
     @Transactional
     public HelpdeskDtos.ActionRequestVO reject(String source, Long id, HelpdeskDtos.ActionDecisionRequest request) {
-        requireActor(request == null ? null : request.actorId());
+        requireActor();
         if ("return_request".equals(source)) {
             var row = requireReturn(id);
             row.setStatus(4);                       // 4 = rejected（见类注释的状态定案）
             row.setResolution("REJECTED");
-            row.setResolutionNote(request.note());
+            row.setResolutionNote(request == null ? null : request.note());
             returnRequestMapper.updateById(row);
             // TODO 审计模块复现后，恢复 supportAuditService.record(...)
             return toReturnView(row);
@@ -161,7 +162,7 @@ public class CommerceApprovalService {
         if ("commerce_action_request".equals(source)) {
             var row = requireAction(id);
             row.setStatus("REJECTED");
-            row.setExternalResult(request.note());
+            row.setExternalResult(request == null ? null : request.note());
             actionRequestMapper.updateById(row);
             // TODO 审计模块复现后，恢复 supportAuditService.record(...)
             return toActionView(row);
@@ -207,9 +208,10 @@ public class CommerceApprovalService {
         return row;
     }
 
-    private Long requireActor(Long actorId) {
+    private Long requireActor() {
+        var actorId = com.omnimerchant.agent.support.CurrentActor.id();
         if (actorId == null) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "缺少操作者身份");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "缺少操作者身份，无法执行该操作");
         }
         return actorId;
     }

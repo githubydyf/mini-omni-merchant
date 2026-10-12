@@ -36,15 +36,15 @@
     <main class="chat-main">
       <header class="chat-header">
         <div class="header-controls">
-          <a-input-number
+          <a-select
             v-model:value="tenantId"
-            :min="1"
-            :controls="false"
-            style="width: 120px"
-            placeholder="租户ID"
+            style="width: 200px"
+            :options="tenantOptions"
+            :loading="tenantLoading"
+            placeholder="选择租户"
             @change="onTenantChange"
           />
-          <span class="tenant-hint">开发测试租户（如 1001）</span>
+          <span class="tenant-hint">仅可选择当前账号有权限的租户</span>
           <a-select
             v-model:value="selectedIntent"
             style="width: 200px"
@@ -99,11 +99,14 @@ import { PlusOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import api from '@/api'
 import MessageBubble from '@/components/MessageBubble.vue'
 import { getStoredTenantId, setStoredTenantId } from '@/utils/tenant'
+import { tenantOptionLabel } from '@/utils/display'
 import { consumeChatStream, mapBackendMessages } from '@/utils/chatStream'
 import { httpErrorMessage } from '@/utils/httpError'
-import type { ChatMessage } from '@/types/contracts'
+import { useAuthStore } from '@/stores/auth'
+import type { ChatMessage, TenantSummary } from '@/types/contracts'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 /**
  * 显式意图选择：本阶段不做自动 Triage，测试台必须显式指定意图，
@@ -122,7 +125,9 @@ const INTENTS = [
 ]
 const intentOptions = INTENTS.map((value) => ({ value, label: value }))
 
-const tenantId = ref<number | null>(getStoredTenantId() ?? 1001)
+const tenantId = ref<number | null>(getStoredTenantId())
+const tenantOptions = ref<{ value: number; label: string }[]>([])
+const tenantLoading = ref(false)
 const selectedIntent = ref('POLICY_QA')
 const conversations = ref<{ uuid: string; title: string; time: string }[]>([])
 const currentConvId = ref('')
@@ -139,6 +144,37 @@ function onTenantChange() {
   messages.value = []
   conversations.value = []
   void loadConversations()
+}
+
+/**
+ * 加载当前账号有权限的租户：
+ * - 平台管理员：/api/tenants 取全部租户；
+ * - 普通用户：只能选择 JWT 声明的自有租户，不能手动输入其他租户。
+ */
+async function loadTenantOptions() {
+  tenantLoading.value = true
+  try {
+    if (authStore.platformAdmin) {
+      const res = await api.get('/tenants', { params: { page: 1, size: 100 } })
+      tenantOptions.value = (res.data?.records || []).map((tenant: TenantSummary) => ({
+        value: tenant.id as number,
+        label: tenantOptionLabel(tenant),
+      }))
+    } else {
+      tenantOptions.value = authStore.tenantIds.map((id) => ({
+        value: id,
+        label: `租户 #${id}`,
+      }))
+    }
+    const saved = getStoredTenantId()
+    const valid = tenantOptions.value.find((item) => item.value === saved)?.value
+      ?? tenantOptions.value[0]?.value
+      ?? null
+    tenantId.value = valid
+    setStoredTenantId(valid)
+  } finally {
+    tenantLoading.value = false
+  }
 }
 
 /** 真实创建会话：由后端生成 UUID 并落库（不再前端本地生成）。 */
@@ -222,6 +258,8 @@ async function sendMessage(text?: string) {
       headers: {
         'Content-Type': 'application/json',
         'X-Tenant-Id': String(tenantId.value),
+        // 鉴权：与 Axios 实例一致的 Bearer Access Token
+        ...(authStore.token ? { Authorization: `Bearer ${authStore.token}` } : {}),
       },
       body: JSON.stringify({
         conversationUuid: currentConvId.value,
@@ -289,6 +327,8 @@ function scrollToBottom() {
 }
 
 onMounted(async () => {
+  // 先加载授权租户列表，再按选中的租户加载会话
+  await loadTenantOptions()
   setStoredTenantId(tenantId.value)
   await loadConversations()
 })

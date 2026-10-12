@@ -43,6 +43,8 @@
         <pgvector.version>0.1.6</pgvector.version>
         <!-- LLM 熔断/重试：Resilience4j（本地仓库已有 2.3.0，与参考项目一致） -->
         <resilience4j.version>2.3.0</resilience4j.version>
+        <!-- JWT（JJWT 0.12.x，与原项目一致）：Access Token 生成/解析/验签 -->
+        <jjwt.version>0.12.6</jjwt.version>
     </properties>
 
     <dependencyManagement>
@@ -93,6 +95,23 @@
                 <groupId>io.github.resilience4j</groupId>
                 <artifactId>resilience4j-reactor</artifactId>
                 <version>${resilience4j.version}</version>
+            </dependency>
+
+            <!-- JJWT：JWT 签名与解析（Spring Boot / Spring AI BOM 未纳入，需显式固定版本） -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

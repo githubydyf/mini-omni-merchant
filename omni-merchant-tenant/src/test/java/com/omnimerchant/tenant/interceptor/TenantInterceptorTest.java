@@ -1,0 +1,132 @@
+package com.omnimerchant.tenant.interceptor;
+
+import com.omnimerchant.common.constant.Constants;
+import com.omnimerchant.common.util.JwtUtil.JwtPrincipal;
+import com.omnimerchant.tenant.context.TenantContextHolder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * TenantInterceptor 测试（阶段 10）：校验 JWT principal 对 X-Tenant-Id 的访问资格。
+ */
+class TenantInterceptorTest {
+
+    private final TenantInterceptor interceptor = new TenantInterceptor();
+
+    @AfterEach
+    void tearDown() {
+        TenantContextHolder.clear();
+    }
+
+    @Test
+    void shouldRejectMissingPrincipal() throws Exception {
+        var response = new MockHttpServletResponse();
+
+        var allowed = interceptor.preHandle(request("/api/chat/stream", "1"), response, new Object());
+
+        assertThat(allowed).isFalse();
+        assertThat(response.getStatus()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldRejectMissingTenantHeader() throws Exception {
+        var request = request("/api/chat/stream", null);
+        request.setAttribute(Constants.ATTR_AUTH_PRINCIPAL, tenantUser(1L));
+        var response = new MockHttpServletResponse();
+
+        var allowed = interceptor.preHandle(request, response, new Object());
+
+        assertThat(allowed).isFalse();
+        assertThat(response.getStatus()).isEqualTo(400);
+    }
+
+    @Test
+    void shouldRejectInvalidTenantHeader() throws Exception {
+        var request = request("/api/chat/stream", "abc");
+        request.setAttribute(Constants.ATTR_AUTH_PRINCIPAL, tenantUser(1L));
+        var response = new MockHttpServletResponse();
+
+        var allowed = interceptor.preHandle(request, response, new Object());
+
+        assertThat(allowed).isFalse();
+        assertThat(response.getStatus()).isEqualTo(400);
+    }
+
+    @Test
+    void shouldRejectTenantOutsideMembership() throws Exception {
+        // 用户只属于 1001，请求 1002 必须 403，且不得设置租户上下文
+        var request = request("/api/chat/stream", "1002");
+        request.setAttribute(Constants.ATTR_AUTH_PRINCIPAL, tenantUser(1001L));
+        var response = new MockHttpServletResponse();
+
+        var allowed = interceptor.preHandle(request, response, new Object());
+
+        assertThat(allowed).isFalse();
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(TenantContextHolder.get()).isNull();
+    }
+
+    @Test
+    void shouldAllowTenantMembership() throws Exception {
+        var request = request("/api/chat/stream", "1001");
+        request.setAttribute(Constants.ATTR_AUTH_PRINCIPAL, tenantUser(1001L));
+        var response = new MockHttpServletResponse();
+
+        var allowed = interceptor.preHandle(request, response, new Object());
+
+        assertThat(allowed).isTrue();
+        assertThat(TenantContextHolder.get()).isEqualTo(1001L);
+    }
+
+    @Test
+    void shouldAllowPlatformAdminForAnyTenant() throws Exception {
+        var request = request("/api/chat/stream", "9999");
+        request.setAttribute(Constants.ATTR_AUTH_PRINCIPAL,
+                new JwtPrincipal("admin@example.com", "ADMIN", Set.of(), true));
+        var response = new MockHttpServletResponse();
+
+        var allowed = interceptor.preHandle(request, response, new Object());
+
+        assertThat(allowed).isTrue();
+        assertThat(TenantContextHolder.get()).isEqualTo(9999L);
+    }
+
+    @Test
+    void shouldNotRequireTenantForAuthEndpoints() throws Exception {
+        var response = new MockHttpServletResponse();
+
+        var allowed = interceptor.preHandle(request("/api/auth/login", null), response, new Object());
+
+        assertThat(allowed).isTrue();
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(TenantContextHolder.get()).isNull();
+    }
+
+    @Test
+    void shouldClearTenantContextAfterCompletion() throws Exception {
+        TenantContextHolder.set(1001L);
+
+        interceptor.afterCompletion(new MockHttpServletRequest(), new MockHttpServletResponse(),
+                new Object(), null);
+
+        assertThat(TenantContextHolder.get()).isNull();
+    }
+
+    private MockHttpServletRequest request(String path, String tenantId) {
+        var request = new MockHttpServletRequest("POST", path);
+        if (tenantId != null) {
+            request.addHeader(Constants.HEADER_TENANT_ID, tenantId);
+        }
+        return request;
+    }
+
+    private JwtPrincipal tenantUser(Long tenantId) {
+        return new JwtPrincipal("owner@example.com", "TENANT_USER", Set.of(tenantId), false);
+    }
+}

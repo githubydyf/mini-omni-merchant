@@ -5,10 +5,17 @@ import com.omnimerchant.common.dto.R;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+/**
+ * 客户 / 订单 / 商品查询接口。
+ *
+ * <p>只读接口对已认证的租户成员开放（数据由 TenantInterceptor + TenantLineInnerInterceptor
+ * 按租户隔离）；商品重建索引属于知识库写操作，需要 {@code knowledge:write} 权限。
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api")
@@ -68,10 +75,11 @@ public class CommerceController {
     }
 
     @PostMapping("/products/reindex")
-//    @PreAuthorize("@tenantAuthorization.hasPermission('knowledge:write')")
+    @PreAuthorize("@tenantAuthorization.hasPermission('knowledge:write')")
     public R<?> reindexProducts() {
         return R.ok(Map.of("queued", commerceService.markProductsForReindex()));
     }
 
 
 }
+

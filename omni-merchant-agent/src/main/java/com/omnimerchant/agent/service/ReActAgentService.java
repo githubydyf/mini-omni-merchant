@@ -155,6 +155,7 @@ public class ReActAgentService {
 
         // 同步入口同样经过 ModelRouter，避免开发入口绕过限流保护
         var routedSync = modelRouter.route(intent);
+
         if (!routedSync.available()) {
             log.warn("Agent 调用被拒绝：没有可用模型（application.yml 的 app.llm.deepseek.api-key 为空）");
             return "[配置错误] 没有可用模型，请检查 application.yml 的 app.llm.deepseek.api-key 后再调用 Agent。";
@@ -162,6 +163,9 @@ public class ReActAgentService {
         var chatModel = routedSync.chatModel();
 
         var tenantId = tenantIdOf(conversationUuid);
+        // 保存进入前的租户上下文并在结束时恢复，避免覆盖调用链（如 TenantInterceptor）已绑定的租户
+        var previousTenant = TenantContextHolder.get();
+        var previousCall = CallContextHolder.get();
         TenantContextHolder.set(tenantId);
         CallContextHolder.set(intent, conversationUuid);
         try {
@@ -181,9 +185,17 @@ public class ReActAgentService {
             log.error("Agent 执行失败：conv={}, intent={}, error={}", conversationUuid, intent, e.getMessage());
             return "[AGENT_UNAVAILABLE] 本次请求暂时无法处理，请稍后重试或转人工客服。";
         } finally {
-            // 防止 ThreadLocal 污染后续请求
-            CallContextHolder.clear();
-            TenantContextHolder.clear();
+            // 恢复现场，防止 ThreadLocal 污染后续请求
+            if (previousCall == null) {
+                CallContextHolder.clear();
+            } else {
+                CallContextHolder.set(previousCall.intent(), previousCall.conversationUuid());
+            }
+            if (previousTenant == null) {
+                TenantContextHolder.clear();
+            } else {
+                TenantContextHolder.set(previousTenant);
+            }
         }
     }
 
@@ -400,6 +412,8 @@ public class ReActAgentService {
 
             // 熔断 / 超时 / 安全重试（只包裹模型调用，不包裹整轮 Agent）
             var lastResponse = new AtomicReference<ChatResponse>(null);
+
+
             var protectedStream = llmResilienceService.protectStream(
                     streamSupplier,
                     // 只要执行过任何工具，或已输出内容，就不允许自动重试

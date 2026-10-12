@@ -78,6 +78,20 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- 方法级授权（@PreAuthorize）：RAG 运维/检索接口的权限边界 -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+        </dependency>
+
+        <!-- 租户上下文（TenantContextHolder）：RAG 检索按租户过滤 policy_vectors 时使用 -->
+        <dependency>
+            <groupId>com.omnimerchant</groupId>
+            <artifactId>omni-merchant-tenant</artifactId>
+            <version>${project.version}</version>
+            <scope>compile</scope>
+        </dependency>
+
         <!-- BM25：Lucene 内存索引 + 中文分词 SmartChineseAnalyzer -->
         <dependency>
             <groupId>org.apache.lucene</groupId>

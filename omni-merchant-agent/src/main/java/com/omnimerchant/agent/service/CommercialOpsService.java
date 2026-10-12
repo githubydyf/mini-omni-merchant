@@ -15,7 +15,7 @@ import com.omnimerchant.agent.mapper.ConversationMapper;
 import com.omnimerchant.agent.mapper.CustomerMapper;
 import com.omnimerchant.agent.mapper.OrderInfoMapper;
 import com.omnimerchant.agent.mapper.TicketMapper;
-import com.omnimerchant.agent.support.DevActor;
+import com.omnimerchant.agent.support.CurrentActor;
 import com.omnimerchant.common.exception.BusinessException;
 import com.omnimerchant.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -144,9 +144,8 @@ public class CommercialOpsService {
     }
 
     // ==================================================================
-    // 人工接管：当前没有登录用户 / 客服分配模块，因此只更新 conversation 中
-    // 能够表示“人工处理中”的字段（status / escalated / escalatedAt），
-    // 不设置 humanAgentId，不写审计。
+    // 人工接管：记录真实操作者（来自已验证 JWT），更新 conversation 中
+    // 表示“人工处理中”的字段（status / escalated / escalatedAt / humanAgentId）。
     // ==================================================================
     @Transactional
     public HelpdeskDtos.InboxWorkItemVO takeover(String conversationUuid, HelpdeskDtos.TakeoverRequest request) {
@@ -157,6 +156,7 @@ public class CommercialOpsService {
         conversation.setStatus(4);
         conversation.setEscalated(1);
         conversation.setEscalatedAt(conversation.getEscalatedAt() == null ? LocalDateTime.now() : conversation.getEscalatedAt());
+        conversation.setHumanAgentId(requireActor());
         conversationMapper.updateById(conversation);
         return toInboxItem(conversation);
     }
@@ -164,7 +164,7 @@ public class CommercialOpsService {
     // ==================================================================
     // 人工回复：真正向 chat_message 新增一条 assistant 消息，并同步更新
     // conversation 的 seqNo / messageCount / lastMessageAt / status（/ endedAt）。
-    // 写操作使用事务。
+    // 写操作使用事务。操作者必须已接管会话（status=4）。
     // ==================================================================
     @Transactional
     public HelpdeskDtos.InboxWorkItemVO humanReply(String conversationUuid, HelpdeskDtos.HumanReplyRequest request) {
@@ -172,10 +172,12 @@ public class CommercialOpsService {
         if (request == null || request.message() == null || request.message().isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "人工回复不能为空");
         }
-        // 没有登录身份，用“是否已人工接管（status=4）”代替原项目的 humanAgentId 校验
+        // 必须已由人工接管（status=4），避免普通登录用户绕过接管直接回复
         if (!Integer.valueOf(4).equals(conversation.getStatus())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "请先接管会话后再回复");
         }
+        var actorId = requireActor();
+        conversation.setHumanAgentId(actorId);
         var seq = chatMessageMapper.selectCount(new LambdaQueryWrapper<ChatMessage>()
                 .eq(ChatMessage::getConversationUuid, conversationUuid)).intValue() + 1;
         var message = new ChatMessage();
@@ -225,7 +227,8 @@ public class CommercialOpsService {
     @Transactional
     public HelpdeskDtos.TicketVO assignTicket(Long id, HelpdeskDtos.TakeoverRequest request) {
         var ticket = requireTicket(id);
-        var actorId = DevActor.resolve(request == null ? null : request.agentId());
+        // 操作者来自已验证 JWT；忽略请求体中的 agentId，防止越权指定他人身份
+        var actorId = requireActor();
         if (List.of("RESOLVED", "CLOSED").contains(ticket.getStatus())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "已结束工单不能重新分配");
         }
@@ -233,7 +236,7 @@ public class CommercialOpsService {
         ticket.setAssignedAt(LocalDateTime.now());
         ticket.setStatus("ASSIGNED");
         ticketMapper.updateById(ticket);
-        // TODO 恢复登录鉴权与 Audit 模块后，写入 support 审计记录（原项目 supportAuditService.record）。
+        // TODO 恢复 Audit 模块后，写入 support 审计记录（原项目 supportAuditService.record）。
         return toTicketVO(ticket);
     }
 
@@ -363,6 +366,20 @@ public class CommercialOpsService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "工单不存在");
         }
         return row;
+    }
+
+    /**
+     * 取得真实登录操作者 ID（来自已验证 JWT）。
+     *
+     * <p>请求体中的 agentId / actorId 不能覆盖真实操作人，因此不接受任何参数；
+     * 未认证时直接拒绝，绝不回退到固定开发人员 ID。
+     */
+    private Long requireActor() {
+        var actorId = CurrentActor.id();
+        if (actorId == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "缺少操作者身份，无法执行该操作");
+        }
+        return actorId;
     }
 
     /** 工单状态文案（原项目 ticketStatusLabel(String)）。 */

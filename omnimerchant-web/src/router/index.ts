@@ -1,16 +1,16 @@
 import { createRouter, createWebHistory } from "vue-router";
-// import { useAuthStore } from "@/stores/auth";
-// import { canViewAdminPage, findAdminPage } from "@/config/adminNavigation";
+import { useAuthStore } from "@/stores/auth";
+import { canViewAdminPage, findAdminPage } from "@/config/adminNavigation";
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    // {
-    //   path: "/login",
-    //   name: "Login",
-    //   component: () => import("@/views/login/LoginView.vue"),
-    //   meta: { public: true },
-    // },
+    {
+      path: "/login",
+      name: "Login",
+      component: () => import("@/views/login/LoginView.vue"),
+      meta: { public: true },
+    },
     {
       path: "/widget",
       name: "Widget",
@@ -180,22 +180,24 @@ const router = createRouter({
   ],
 });
 
-// router.beforeEach((to, _from, next) => {
-//   const authStore = useAuthStore();
-//   if (to.meta.public) {
-//     next();
-//     return;
-//   }
-//   if (!authStore.isLoggedIn) {
-//     next("/login");
-//     return;
-//   }
-//   const adminPage = findAdminPage(to.path);
-//   if (adminPage && !canViewAdminPage(adminPage, authStore.roles, authStore.platformAdmin)) {
-//     next("/admin");
-//     return;
-//   }
-//   next();
-// });
+// 路由守卫：未登录跳转 /login；已登录但无该页面权限跳回 /admin。
+// 注意：前端页面权限只改善体验，真正安全边界始终在后端。
+router.beforeEach((to, _from, next) => {
+  const authStore = useAuthStore();
+  if (to.meta.public) {
+    next();
+    return;
+  }
+  if (!authStore.isLoggedIn) {
+    next("/login");
+    return;
+  }
+  const adminPage = findAdminPage(to.path);
+  if (adminPage && !canViewAdminPage(adminPage, authStore.roles, authStore.platformAdmin)) {
+    next("/admin");
+    return;
+  }
+  next();
+});
 
 export default router;
