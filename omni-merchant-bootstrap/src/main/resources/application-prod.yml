@@ -1,0 +1,15 @@
+# 生产环境 profile 覆盖：强制 JWT 密钥与引导管理员来自环境变量。
+#
+# 启动方式：java -jar ... --spring.profiles.active=prod
+# 必须提供的环境变量：
+#   JWT_SECRET     —— JWT 签名密钥（至少 32 字节），不提供则启动失败
+#   ADMIN_EMAIL    —— 首次启动平台管理员邮箱（已存在平台管理员时可不提供）
+#   ADMIN_PASSWORD —— 首次启动平台管理员密码（已存在平台管理员时可不提供）
+#
+# 这里把默认值置空，使缺失环境变量时 fail-closed，避免误用开发占位密钥上生产。
+admin:
+  jwt-secret: ${JWT_SECRET:}
+  email: ${ADMIN_EMAIL:}
+  password: ${ADMIN_PASSWORD:}
+
+# 生产建议同时通过环境变量覆盖数据源、Redis、外部模型密钥等（此处仅收口认证相关）。

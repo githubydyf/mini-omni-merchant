@@ -14,6 +14,9 @@ public final class Constants {
     /** 已验证 JWT principal 的请求属性名 */
     public static final String ATTR_AUTH_PRINCIPAL = "omni.auth.principal";
 
+    /** 已验证 Widget 买家 principal 的请求属性名 */
+    public static final String ATTR_WIDGET_PRINCIPAL = "omni.widget.principal";
+
     /** Redis Key 前缀 */
     public static final String REDIS_PREFIX = "omni:";
 

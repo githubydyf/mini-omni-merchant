@@ -143,4 +143,102 @@ class JwtUtilTest {
         claims.forEach(builder::claim);
         return builder.compact();
     }
+
+    // ==================== Widget 买家令牌（阶段 11） ====================
+
+    @Test
+    void shouldGenerateWidgetCustomerClaims() {
+        var token = jwtUtil.generateWidgetCustomerToken(
+                "buyer@example.com", 1001L, "OM-1001", "conv-1", 7_200_000);
+
+        var principal = jwtUtil.parseWidgetCustomerToken(token);
+
+        assertThat(principal.subject()).isEqualTo("buyer@example.com");
+        assertThat(principal.tenantId()).isEqualTo(1001L);
+        assertThat(principal.tenantIds()).containsExactly(1001L);
+        assertThat(principal.tenantCode()).isEqualTo("OM-1001");
+        assertThat(principal.conversationUuid()).isEqualTo("conv-1");
+    }
+
+    @Test
+    void shouldRejectExpiredWidgetToken() {
+        var token = jwtUtil.generateWidgetCustomerToken(
+                "anonymous", 1001L, "OM-1001", "conv-1",
+                new Date(System.currentTimeMillis() - 1_000));
+
+        assertThatThrownBy(() -> jwtUtil.parseWidgetCustomerToken(token))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void shouldRejectTamperedWidgetToken() {
+        var token = jwtUtil.generateWidgetCustomerToken("buyer@example.com", 1001L, "OM-1001", "conv-1", 60_000);
+        var tampered = token.substring(0, token.length() - 2) + "xx";
+
+        assertThatThrownBy(() -> jwtUtil.parseWidgetCustomerToken(tampered))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void adminTokenMustNotBeAcceptedAsWidgetToken() {
+        var adminToken = jwtUtil.generatePlatformAdminToken("admin@example.com");
+
+        assertThatThrownBy(() -> jwtUtil.parseWidgetCustomerToken(adminToken))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void widgetTokenMustNotBeAcceptedAsAdminPrincipal() {
+        var widgetToken = jwtUtil.generateWidgetCustomerToken("buyer@example.com", 1001L, "OM-1001", "conv-1", 60_000);
+
+        assertThatThrownBy(() -> jwtUtil.parsePrincipal(widgetToken))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void widgetTokenWithWrongIssuerIsRejected() {
+        var token = signedWithClaims("buyer@example.com", Map.of(
+                "iss", "omnimerchant-admin",
+                "aud", JwtUtil.DEFAULT_WIDGET_AUDIENCE,
+                "role", JwtUtil.ROLE_WIDGET_CUSTOMER,
+                "tenantId", 1001L,
+                "tenantIds", List.of(1001L),
+                "tenantCode", "OM-1001",
+                "conversationUuid", "conv-1"));
+
+        assertThatThrownBy(() -> jwtUtil.parseWidgetCustomerToken(token))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("issuer or audience");
+    }
+
+    @Test
+    void widgetTokenWithWrongAudienceIsRejected() {
+        var token = signedWithClaims("buyer@example.com", Map.of(
+                "iss", JwtUtil.DEFAULT_WIDGET_ISSUER,
+                "aud", "omnimerchant-admin-api",
+                "role", JwtUtil.ROLE_WIDGET_CUSTOMER,
+                "tenantId", 1001L,
+                "tenantIds", List.of(1001L),
+                "tenantCode", "OM-1001",
+                "conversationUuid", "conv-1"));
+
+        assertThatThrownBy(() -> jwtUtil.parseWidgetCustomerToken(token))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("issuer or audience");
+    }
+
+    @Test
+    void widgetTokenWithoutTenantOrConversationClaimIsRejected() {
+        var token = signedWithClaims("buyer@example.com", Map.of(
+                "iss", JwtUtil.DEFAULT_WIDGET_ISSUER,
+                "aud", JwtUtil.DEFAULT_WIDGET_AUDIENCE,
+                "role", JwtUtil.ROLE_WIDGET_CUSTOMER,
+                "tenantId", 1001L,
+                "tenantIds", List.of(1001L)));
+        // 缺少 tenantCode / conversationUuid
+
+        assertThatThrownBy(() -> jwtUtil.parseWidgetCustomerToken(token))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("missing tenant or conversation");
+    }
 }

@@ -29,7 +29,17 @@
             <div class="msg-body" v-html="render(streamText || '正在回复...')"></div>
           </div>
         </div>
-        <footer class="composer">
+        <div class="composer">
+          <div class="topic-row">
+            <span class="topic-label">咨询类型</span>
+            <a-select
+              v-model:value="intent"
+              class="topic-select"
+              size="small"
+              :options="intentOptions"
+              :disabled="streaming"
+            />
+          </div>
           <a-input-search
             v-model:value="input"
             enter-button="发送"
@@ -38,7 +48,7 @@
             :loading="streaming"
             @search="send()"
           />
-        </footer>
+        </div>
       </div>
     </section>
   </div>
@@ -51,6 +61,21 @@ import { consumeSse } from '@/utils/sse'
 import { renderSafeMarkdown } from '@/utils/markdown'
 import type { WidgetSession } from '@/types/contracts'
 
+/**
+ * 咨询类型：仅提供只读类咨询分类，买家主动选择后作为 intent 提交。
+ * 退款/退货/改址/取消等副作用业务仍需真实身份核验与人工审批，
+ * 这里不提供入口，也不因买家选择而放开副作用工具。
+ */
+const INTENT_OPTIONS = [
+  { value: 'GENERAL', label: '综合咨询' },
+  { value: 'POLICY_QA', label: '退换 / 政策' },
+  { value: 'ORDER_STATUS', label: '订单状态' },
+  { value: 'LOGISTICS', label: '物流进度' },
+  { value: 'PRODUCT_ADVICE', label: '商品咨询' },
+  { value: 'HUMAN_REQUEST', label: '转人工客服' },
+]
+const intentOptions = INTENT_OPTIONS
+
 const tenantCode = ref('')
 const customerEmail = ref('')
 const customerName = ref('')
@@ -61,6 +86,7 @@ const starting = ref(false)
 const streaming = ref(false)
 const input = ref('')
 const streamText = ref('')
+const intent = ref('GENERAL')
 const messages = ref<{ role: string; text: string }[]>([])
 const messagesEl = ref<HTMLElement>()
 
@@ -80,6 +106,10 @@ function render(text: string) {
 }
 
 async function startSession() {
+  if (!tenantCode.value.trim()) {
+    message.warning('请先填写店铺编码')
+    return
+  }
   starting.value = true
   customerSessionToken.value = ''
   try {
@@ -87,9 +117,9 @@ async function startSession() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        tenantCode: tenantCode.value,
-        customerEmail: customerEmail.value,
-        customerName: customerName.value,
+        tenantCode: tenantCode.value.trim(),
+        customerEmail: customerEmail.value.trim(),
+        customerName: customerName.value.trim(),
         language: 'zh',
       }),
     })
@@ -100,6 +130,8 @@ async function startSession() {
     customerSessionToken.value = body.data.customerSessionToken
     connected.value = true
     messages.value = [{ role: 'assistant', text: body.data.welcomeMessage || '您好，请问有什么可以帮您？' }]
+    await nextTick()
+    scrollToBottom()
   } catch (error: unknown) {
     message.error(formatFetchError(error, '无法创建会话'))
   } finally {
@@ -131,24 +163,38 @@ async function send(text?: string) {
         Authorization: `Bearer ${customerSessionToken.value}`,
       },
       body: JSON.stringify({
-        tenantCode: tenantCode.value,
+        tenantCode: tenantCode.value.trim(),
         conversationUuid: session.value.conversationUuid,
         message: userText,
-        intent: 'UNKNOWN',
+        intent: intent.value || 'GENERAL',
       }),
     })
     if (!resp.ok) throw new Error(formatWidgetError(resp.status, (await readJson(resp)).message))
+
+    let streamError = ''
     await consumeSse(resp, ({ event, data }) => {
       if (event === 'status' || event === 'done' || data === '[DONE]') return
-      if (event === 'error') throw new Error(data)
+      if (event === 'error') {
+        streamError = data || '服务暂时不可用'
+        return
+      }
       if (event === 'final') streamText.value = data
       else if (event === 'translated_delta' || event === 'message') streamText.value += data
     })
-    if (streamText.value) {
+
+    if (streamError) {
+      // 服务端明确返回错误：不落库、不显示半截回复
+      message.error(streamError)
+      streamText.value = ''
+      return
+    }
+
+    const finalText = streamText.value.trim()
+    if (finalText) {
+      messages.value.push({ role: 'assistant', text: finalText })
       await nextTick()
       scrollToBottom()
     }
-    if (streamText.value) messages.value.push({ role: 'assistant', text: streamText.value })
   } catch (error: unknown) {
     message.error(formatFetchError(error, '回复失败'))
     const errorMessage = error instanceof Error ? error.message : ''
@@ -165,6 +211,7 @@ function resetSession() {
   connected.value = false
   session.value = null
   customerSessionToken.value = ''
+  messages.value = []
 }
 
 function scrollToBottom() {
@@ -191,7 +238,7 @@ function formatWidgetError(status: number, errorMessage?: string) {
 function formatFetchError(error: unknown, fallback: string) {
   const errorMessage = error instanceof Error ? error.message : ''
   if (errorMessage === 'Failed to fetch' || errorMessage === 'NetworkError when attempting to fetch resource.') {
-    return '无法连接服务或地址不一致，请统一使用 http://127.0.0.1:5188 或 http://localhost:5188'
+    return '无法连接服务，请确认后端已启动后重试'
   }
   return errorMessage || fallback
 }
@@ -294,7 +341,23 @@ function formatFetchError(error: unknown, fallback: string) {
 
 .composer {
   border-top: 1px solid #eef0f3;
-  padding: 14px;
+  padding: 12px 14px 14px;
+}
+
+.topic-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.topic-label {
+  color: #8c98a8;
+  font-size: 12px;
+}
+
+.topic-select {
+  width: 160px;
 }
 
 @media (max-width: 640px) {

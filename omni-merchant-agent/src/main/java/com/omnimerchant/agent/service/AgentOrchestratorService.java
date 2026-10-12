@@ -49,6 +49,10 @@ public class AgentOrchestratorService {
                     List.of("refundPolicyRAG"), "MEDIUM", false, false, false);
             case "COMPLAINT", "HUMAN_REQUEST" -> new SpecialistPlan("handoff", "人工交接智能体",
                     List.of("escalateToHuman"), "HIGH", false, false, true);
+            // GENERAL：买家入口（Widget）的通用问答。只允许"只读"政策 RAG 工具，
+            // 绝不暴露任何副作用工具（退款 / 退货 / 改址 / 取消）。属于最小安全分流。
+            case "GENERAL" -> new SpecialistPlan("general", "通用咨询智能体",
+                    List.of("refundPolicyRAG"), "LOW", false, false, false);
             default -> new SpecialistPlan("triage", "意图分流智能体",
                     List.of(), "LOW", false, false, false);
         };

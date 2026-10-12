@@ -2,6 +2,7 @@ package com.omnimerchant.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omnimerchant.admin.filter.AdminAuthFilter;
+import com.omnimerchant.admin.filter.WidgetAuthFilter;
 import com.omnimerchant.admin.service.IdentityService;
 import com.omnimerchant.common.dto.R;
 import com.omnimerchant.common.util.JwtUtil;
@@ -32,7 +33,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    /** 公开接口白名单：登录、刷新、健康检查。 */
+    /** 公开接口白名单：登录、刷新、健康检查、Widget 会话创建。 */
     private static final String[] PUBLIC_MATCHERS = {
             "/api/health",
             "/actuator/health",
@@ -40,7 +41,10 @@ public class SecurityConfig {
             "/api/auth/login",
             "/api/auth/refresh",
             "/api/admin/login",
-            "/api/admin/refresh"
+            "/api/admin/refresh",
+            // Widget 买家无需后台账号：会话创建公开；聊天流由 WidgetAuthFilter 单独强制校验 Token
+            "/api/widget/session",
+            "/api/widget/chat/stream"
     };
 
     @Bean
@@ -54,8 +58,14 @@ public class SecurityConfig {
     }
 
     @Bean
+    public WidgetAuthFilter widgetAuthFilter(JwtUtil jwtUtil) {
+        return new WidgetAuthFilter(jwtUtil);
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    AdminAuthFilter adminAuthFilter,
+                                                   WidgetAuthFilter widgetAuthFilter,
                                                    ObjectMapper objectMapper) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
@@ -80,7 +90,8 @@ public class SecurityConfig {
                             response.getWriter().write(objectMapper.writeValueAsString(
                                     R.fail("403", "无权执行该操作")));
                         }))
-                .addFilterBefore(adminAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(adminAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(widgetAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 }

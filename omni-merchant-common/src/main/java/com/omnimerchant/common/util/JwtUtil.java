@@ -42,25 +42,42 @@ public class JwtUtil {
 
     public static final String DEFAULT_ADMIN_ISSUER = "omnimerchant-admin";
     public static final String DEFAULT_ADMIN_AUDIENCE = "omnimerchant-admin-api";
+    public static final String DEFAULT_WIDGET_ISSUER = "omnimerchant-widget";
+    public static final String DEFAULT_WIDGET_AUDIENCE = "omnimerchant-widget-api";
+
+    /** Widget 买家令牌角色。该角色不具备任何后台权限。 */
+    public static final String ROLE_WIDGET_CUSTOMER = "WIDGET_CUSTOMER";
 
     private final SecretKey currentKey;
     private final SecretKey previousKey;
     private final long expirationMs;
     private final String adminIssuer;
     private final String adminAudience;
+    private final String widgetIssuer;
+    private final String widgetAudience;
 
     public JwtUtil(String secret, long expirationMs) {
-        this(secret, null, expirationMs, DEFAULT_ADMIN_ISSUER, DEFAULT_ADMIN_AUDIENCE);
+        this(secret, null, expirationMs, DEFAULT_ADMIN_ISSUER, DEFAULT_ADMIN_AUDIENCE,
+                DEFAULT_WIDGET_ISSUER, DEFAULT_WIDGET_AUDIENCE);
     }
 
     public JwtUtil(String currentSecret, String previousSecret, long expirationMs,
                    String adminIssuer, String adminAudience) {
+        this(currentSecret, previousSecret, expirationMs, adminIssuer, adminAudience,
+                DEFAULT_WIDGET_ISSUER, DEFAULT_WIDGET_AUDIENCE);
+    }
+
+    public JwtUtil(String currentSecret, String previousSecret, long expirationMs,
+                   String adminIssuer, String adminAudience,
+                   String widgetIssuer, String widgetAudience) {
         this.currentKey = key(currentSecret, "JWT_SECRET");
         this.previousKey = previousSecret == null || previousSecret.isBlank()
                 ? null : key(previousSecret, "JWT_PREVIOUS_SECRET");
         this.expirationMs = expirationMs;
         this.adminIssuer = required(adminIssuer, "admin issuer");
         this.adminAudience = required(adminAudience, "admin audience");
+        this.widgetIssuer = required(widgetIssuer, "widget issuer");
+        this.widgetAudience = required(widgetAudience, "widget audience");
     }
 
     public String generateToken(String subject) {
@@ -118,9 +135,48 @@ public class JwtUtil {
         }
     }
 
+    /**
+     * 生成 Widget 买家会话令牌。
+     *
+     * <p>与后台 Access Token 使用<b>不同</b>的 issuer / audience / role，二者不可互相冒充。
+     * claims：sub / jti / iss / aud / role(WIDGET_CUSTOMER) / tenantId / tenantIds /
+     * tenantCode / conversationUuid / platformAdmin(false) / iat / exp。
+     */
+    public String generateWidgetCustomerToken(String subject, Long tenantId, String tenantCode,
+                                              String conversationUuid, long ttlMs) {
+        return generateWidgetCustomerToken(subject, tenantId, tenantCode, conversationUuid,
+                new Date(System.currentTimeMillis() + ttlMs));
+    }
+
+    public String generateWidgetCustomerToken(String subject, Long tenantId, String tenantCode,
+                                              String conversationUuid, Date expiresAt) {
+        required(subject, "subject");
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId is required");
+        }
+        required(tenantCode, "tenantCode");
+        required(conversationUuid, "conversationUuid");
+        Date now = new Date();
+        return Jwts.builder()
+                .subject(subject)
+                .id(UUID.randomUUID().toString())
+                .issuer(widgetIssuer)
+                .claim("aud", widgetAudience)
+                .claim("role", ROLE_WIDGET_CUSTOMER)
+                .claim("tenantId", tenantId)
+                .claim("tenantIds", List.of(tenantId))
+                .claim("tenantCode", tenantCode)
+                .claim("conversationUuid", conversationUuid)
+                .claim("platformAdmin", false)
+                .issuedAt(now)
+                .expiration(expiresAt)
+                .signWith(currentKey)
+                .compact();
+    }
+
     public JwtPrincipal parsePrincipal(String token) {
         var claims = parseToken(token);
-        requireScope(claims);
+        requireScope(claims, adminIssuer, adminAudience);
         var role = claims.get("role", String.class);
         var tenantIds = extractTenantIds(claims.get("tenantIds", List.class));
         return new JwtPrincipal(
@@ -134,6 +190,32 @@ public class JwtUtil {
                 extractTenantStringMap(claims.get("tenantPermissions")),
                 claims.getId(),
                 extractIntClaim(claims.get("tokenVersion"), 1));
+    }
+
+    /**
+     * 解析并校验 Widget 买家令牌：必须签名合法、issuer / audience 为 Widget、role 为
+     * {@code WIDGET_CUSTOMER}，且 tenantId / tenantCode / conversationUuid 齐备。
+     *
+     * <p>任何一项不满足都抛异常（由调用方转为 401）。
+     */
+    public WidgetCustomerPrincipal parseWidgetCustomerToken(String token) {
+        var claims = parseToken(token);
+        requireScope(claims, widgetIssuer, widgetAudience);
+        var role = claims.get("role", String.class);
+        if (!ROLE_WIDGET_CUSTOMER.equals(role)) {
+            throw new IllegalArgumentException("token role is not WIDGET_CUSTOMER");
+        }
+        var tenantId = extractLongClaim(claims.get("tenantId"));
+        var tenantIds = extractTenantIds(claims.get("tenantIds", List.class));
+        var tenantCode = claims.get("tenantCode", String.class);
+        var conversationUuid = claims.get("conversationUuid", String.class);
+        if (tenantId == null || tenantCode == null || tenantCode.isBlank()
+                || conversationUuid == null || conversationUuid.isBlank()
+                || !tenantIds.contains(tenantId)) {
+            throw new IllegalArgumentException("widget token is missing tenant or conversation claims");
+        }
+        return new WidgetCustomerPrincipal(claims.getSubject(), tenantId, tenantCode,
+                conversationUuid, tenantIds, claims.getId(), claims.getExpiration());
     }
 
     public Date tokenExpiresAt(String token) {
@@ -157,8 +239,8 @@ public class JwtUtil {
         return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
     }
 
-    private void requireScope(Claims claims) {
-        if (!adminIssuer.equals(claims.getIssuer()) || !claimContains(claims.get("aud"), adminAudience)) {
+    private void requireScope(Claims claims, String issuer, String audience) {
+        if (!issuer.equals(claims.getIssuer()) || !claimContains(claims.get("aud"), audience)) {
             throw new IllegalArgumentException("token issuer or audience mismatch");
         }
     }
@@ -281,5 +363,21 @@ public class JwtUtil {
             return platformAdmin || (tenantId != null
                     && tenantPermissions.getOrDefault(tenantId, Set.of()).contains(permission));
         }
+    }
+
+    /**
+     * 已验证的 Widget 买家身份主体。
+     *
+     * <p><b>注意</b>：它只证明"持有该段买家会话令牌"，<b>不</b>证明客户拥有任何订单。
+     * 它不具备任何后台角色 / 权限（不是 {@link JwtPrincipal}）。
+     */
+    public record WidgetCustomerPrincipal(
+            String subject,
+            Long tenantId,
+            String tenantCode,
+            String conversationUuid,
+            Set<Long> tenantIds,
+            String tokenId,
+            Date expiresAt) {
     }
 }
