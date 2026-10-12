@@ -8,17 +8,19 @@ import com.omnimerchant.agent.entity.ChatMessage;
 import com.omnimerchant.agent.entity.Conversation;
 import com.omnimerchant.agent.mapper.ConversationMapper;
 import com.omnimerchant.agent.memory.ConversationMemoryService;
+import com.omnimerchant.agent.resilience.LlmResilienceService;
+import com.omnimerchant.agent.router.ModelRouter;
 import com.omnimerchant.agent.tool.ToolCallbackScope;
+import com.omnimerchant.agent.tool.ToolExecutionMarker;
 import com.omnimerchant.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -27,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 /**
  * ReAct Agent 主链（本阶段为最小版）。
@@ -121,7 +124,6 @@ public class ReActAgentService {
             - 所有业务结果必须依据真实工具返回值，不得编造。
             """;
 
-    private final ObjectProvider<ChatModel> chatModelProvider;
     private final ToolCallbackProvider toolCallbackProvider;
     private final AgentOrchestratorService agentOrchestratorService;
     private final AgentExecutionGuardService agentExecutionGuardService;
@@ -130,14 +132,8 @@ public class ReActAgentService {
     private final ConversationMemoryService conversationMemoryService;
     private final AgentTraceService agentTraceService;
     private final AgentStateMachineService agentStateMachineService;
-
-    /** 实际使用的模型名（写入 chat_message.model_name，仅记录真实配置值）。 */
-    @Value("${app.llm.deepseek.model:deepseek-chat}")
-    private String modelName;
-
-    /** 模型提供商（写入 agent_run.model_provider，仅记录真实配置）。 */
-    @Value("${app.llm.deepseek.provider:deepseek}")
-    private String modelProvider;
+    private final ModelRouter modelRouter;
+    private final LlmResilienceService llmResilienceService;
 
     /**
      * 单轮对话入口。
@@ -157,11 +153,13 @@ public class ReActAgentService {
             return "当前意图暂不支持自动处理（未识别到可用意图，或该意图尚未接入处理链）。";
         }
 
-        var chatModel = chatModelProvider.getIfAvailable();
-        if (chatModel == null) {
-            log.warn("Agent 调用被拒绝：未配置 DeepSeek 模型（application.yml 的 app.llm.deepseek.api-key 为空）");
-            return "[配置错误] 未配置 DeepSeek 模型，请检查 application.yml 的 app.llm.deepseek.api-key 后再调用 Agent。";
+        // 同步入口同样经过 ModelRouter，避免开发入口绕过限流保护
+        var routedSync = modelRouter.route(intent);
+        if (!routedSync.available()) {
+            log.warn("Agent 调用被拒绝：没有可用模型（application.yml 的 app.llm.deepseek.api-key 为空）");
+            return "[配置错误] 没有可用模型，请检查 application.yml 的 app.llm.deepseek.api-key 后再调用 Agent。";
         }
+        var chatModel = routedSync.chatModel();
 
         var tenantId = tenantIdOf(conversationUuid);
         TenantContextHolder.set(tenantId);
@@ -250,22 +248,26 @@ public class ReActAgentService {
                                           String intent,
                                           AgentExecutionGuardService.ConversationLease lease) {
         return Flux.defer(() -> {
-            // 一次正式请求 = 一个 AgentRun（唯一 traceId，绝不使用 conversationUuid 代替）
-            var traceId = agentTraceService.startChatRun(
-                    conversation.getTenantId(), conversation.getConversationUuid(), intent,
-                    modelProvider, modelName, userMessage);
             var startedAt = System.currentTimeMillis();
             var firstTokenAt = new AtomicReference<Long>(null);
             var terminal = new AtomicBoolean(false);
+
+            // 编排 + 模型路由先行：让 AgentRun 记录真实 provider/model（任务 §8/§38）
+            var plan = agentOrchestratorService.plan(intent, userMessage);
+            var routed = modelRouter.route(intent);
+
+            // 一次正式请求 = 一个 AgentRun（唯一 traceId，绝不使用 conversationUuid 代替）
+            var traceId = agentTraceService.startChatRun(
+                    conversation.getTenantId(), conversation.getConversationUuid(), intent,
+                    routed.providerName(), routed.modelName(), userMessage);
+            log.info("Agent 流式编排：traceId={}, intent={}, specialist={}, allowlist={}, provider={}, model={}",
+                    traceId, intent, plan.specialistKey(), plan.toolAllowlist(),
+                    routed.providerName(), routed.modelName());
 
             // 作用域提前构建：状态机与工具都需要在正确租户线程上下文下执行
             // （Reactor 流式执行不在请求线程，ThreadLocal 不会自动传播）
             var scope = new CallScope(conversation.getTenantId(), intent,
                     conversation.getConversationUuid(), traceId);
-
-            var plan = agentOrchestratorService.plan(intent, userMessage);
-            log.info("Agent 流式编排：traceId={}, intent={}, specialist={}, allowlist={}",
-                    traceId, intent, plan.specialistKey(), plan.toolAllowlist());
 
             if (plan.toolAllowlist().isEmpty()) {
                 terminal.set(true);
@@ -308,16 +310,16 @@ public class ReActAgentService {
                     AgentStateMachineService.AI_TRIAGE, AgentStateMachineService.AI_WORKING,
                     null, 0, Map.of("specialist", plan.specialistKey()));
 
-            var chatModel = chatModelProvider.getIfAvailable();
-            if (chatModel == null) {
+            if (!routed.available()) {
                 terminal.set(true);
-                log.warn("流式对话被拒绝：未配置 DeepSeek 模型，traceId={}", traceId);
+                log.warn("流式对话被拒绝：没有可用的模型，traceId={}", traceId);
                 agentTraceService.failRunWithReason(traceId, FailureAttributionService.MODEL_UNAVAILABLE,
-                        "未配置 DeepSeek 模型", elapsed(startedAt));
+                        "没有可用的模型", elapsed(startedAt));
                 failState(scope, conversation, traceId, "未配置模型");
                 return Flux.just(ChatStreamEvent.error(
-                        "未配置 DeepSeek 模型，请检查 application.yml 的 app.llm.deepseek.api-key。"));
+                        "当前没有可用的模型，请检查 application.yml 的 app.llm.deepseek.api-key。"));
             }
+            var chatModel = routed.chatModel();
 
             // MEMORY 步：读取最近 N 条历史（含本轮用户消息）
             var historyStart = System.currentTimeMillis();
@@ -389,12 +391,24 @@ public class ReActAgentService {
             toolContext.put("conversationLease", lease);
 
             var promptSpec = chatClient.prompt().toolContext(toolContext);
-            var streamSpec = history.isEmpty()
+            // 每轮开始重置「已执行工具」标记，供安全重试判据使用
+            ToolExecutionMarker.clear();
+            // 用 chatResponse() 而非 content()：既拿到文本增量，也能捕获真实 Usage metadata
+            Supplier<Flux<ChatResponse>> streamSupplier = () -> (history.isEmpty()
                     ? promptSpec.user(userMessage).stream()
-                    : promptSpec.messages(history).stream();
+                    : promptSpec.messages(history).stream()).chatResponse();
 
-            Flux<ChatStreamEvent> deltas = streamSpec
-                    .content()
+            // 熔断 / 超时 / 安全重试（只包裹模型调用，不包裹整轮 Agent）
+            var lastResponse = new AtomicReference<ChatResponse>(null);
+            var protectedStream = llmResilienceService.protectStream(
+                    streamSupplier,
+                    // 只要执行过任何工具，或已输出内容，就不允许自动重试
+                    () -> !ToolExecutionMarker.executed(),
+                    routed.modelName());
+
+            Flux<ChatStreamEvent> deltas = protectedStream
+                    .doOnNext(lastResponse::set)
+                    .map(response -> extractText(response))
                     .filter(chunk -> chunk != null && !chunk.isEmpty())
                     .map(chunk -> {
                         // 记录真实首个非空内容的时间点（不是总耗时，也不是固定值）
@@ -420,7 +434,7 @@ public class ReActAgentService {
                 ChatMessage savedAssistant;
                 try {
                     savedAssistant = chatMessagePersistenceService.saveAssistantMessage(
-                            conversation, finalText, modelName, elapsed(startedAt));
+                            conversation, finalText, routed.modelName(), elapsed(startedAt));
                 } catch (Exception e) {
                     log.error("assistant 消息落库失败：conv={}, error={}",
                             conversation.getConversationUuid(), e.getMessage());
@@ -432,6 +446,8 @@ public class ReActAgentService {
                 }
                 // MySQL 成功后同步 Redis（失败不影响已落库的真实回复）
                 conversationMemoryService.syncAssistantMessage(conversation, savedAssistant);
+                // Token 用量由 RateLimitedChatModel 在每次真实模型请求结束时采集
+                // （含 Tool Calling 的多轮），此处不再重复记录，避免重复计数。
                 // 只有在 assistant 已成功落库后，才把 AgentRun 标记为 SUCCESS
                 if (terminal.compareAndSet(false, true)) {
                     agentTraceService.completeRun(traceId, finalText,
@@ -451,8 +467,8 @@ public class ReActAgentService {
                             agentTraceService.failRun(traceId, error, elapsed(startedAt));
                             failState(scope, conversation, traceId, error.getMessage());
                         }
-                        return Flux.just(ChatStreamEvent.error(
-                                "本次请求暂时无法处理，请稍后重试或转人工客服。"));
+                        // 明确区分限流 / 熔断 / 超时 / 其他模型故障，避免统一成模糊文案
+                        return Flux.just(ChatStreamEvent.error(userFacingModelErrorMessage(error)));
                     })
                     // 兜底：客户端取消等导致既未 SUCCESS 也未 FAILED 时，避免长期 RUNNING 或 AI_WORKING
                     .doFinally(signal -> {
@@ -463,6 +479,30 @@ public class ReActAgentService {
                         }
                     });
         });
+    }
+
+    /**
+     * 把模型侧失败翻译成明确的中文提示（任务 §21/§36）。
+     *
+     * <p>限流、熔断、超时都通过 {@code SSE error} 反馈，绝不伪装成正常回答。
+     */
+    private String userFacingModelErrorMessage(Throwable error) {
+        if (error instanceof com.omnimerchant.agent.ratelimit.RateLimitedChatModel.RateLimitedException limited) {
+            return switch (limited.rejectReason() == null ? "" : limited.rejectReason()) {
+                case "QPS_LIMITED" -> "当前咨询较为频繁，请稍等片刻后再发送消息。";
+                case "BUDGET_EXCEEDED" -> "本月模型用量额度已用完，请联系管理员或稍后再试。";
+                case "CONCURRENT_LIMITED" -> "当前同时进行的咨询较多，请稍后再试。";
+                case "RATE_LIMITER_UNAVAILABLE" -> "服务繁忙，请稍后重试。";
+                default -> "当前请求暂时无法处理，请稍后重试。";
+            };
+        }
+        if (error instanceof io.github.resilience4j.circuitbreaker.CallNotPermittedException) {
+            return "模型服务暂时不可用（已触发熔断保护），请稍后重试或转人工客服。";
+        }
+        if (error instanceof java.util.concurrent.TimeoutException) {
+            return "模型响应超时，本次请求未能完成，请稍后重试。";
+        }
+        return "本次请求暂时无法处理，请稍后重试或转人工客服。";
     }
 
     /** 状态机收尾为 WAITING_CUSTOMER（bestEffort，失败不影响业务）。 */
@@ -501,6 +541,16 @@ public class ReActAgentService {
     private Integer firstTokenLatencyMs(long startedAt, Long firstTokenAt) {
         return firstTokenAt == null ? null : (int) (firstTokenAt - startedAt);
     }
+
+    /** 从模型响应中提取文本增量（StreamingChatModel 的每个 chunk）。 */
+    private String extractText(ChatResponse response) {
+        if (response == null || response.getResult() == null
+                || response.getResult().getOutput() == null) {
+            return null;
+        }
+        return response.getResult().getOutput().getText();
+    }
+
 
     /** 中文 System Prompt + 追加当前 Specialist 的运行时信息（不暴露全量 Tool 名单）。 */
     private String systemPrompt(AgentOrchestratorService.SpecialistPlan plan) {

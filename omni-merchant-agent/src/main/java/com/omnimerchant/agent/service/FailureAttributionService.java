@@ -23,6 +23,10 @@ import java.util.concurrent.TimeoutException;
 public class FailureAttributionService {
 
     public static final String MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE";
+    /** 限流拒绝（QPS/预算/并发），属于业务拒绝而非模型故障。 */
+    public static final String RATE_LIMITED = "RATE_LIMITED";
+    /** 熔断器 OPEN，快速拒绝。 */
+    public static final String CIRCUIT_OPEN = "CIRCUIT_OPEN";
     public static final String LLM_TIMEOUT = "LLM_TIMEOUT";
     public static final String TOOL_EXCEPTION = "TOOL_EXCEPTION";
     public static final String RAG_NO_RESULT = "RAG_NO_RESULT";
@@ -36,6 +40,12 @@ public class FailureAttributionService {
             return UNKNOWN;
         }
         var unwrapped = Exceptions.unwrap(throwable);
+        if (unwrapped instanceof com.omnimerchant.agent.ratelimit.RateLimitedChatModel.RateLimitedException) {
+            return RATE_LIMITED;
+        }
+        if (unwrapped instanceof io.github.resilience4j.circuitbreaker.CallNotPermittedException) {
+            return CIRCUIT_OPEN;
+        }
         if (unwrapped instanceof TimeoutException || unwrapped instanceof HttpTimeoutException) {
             return LLM_TIMEOUT;
         }

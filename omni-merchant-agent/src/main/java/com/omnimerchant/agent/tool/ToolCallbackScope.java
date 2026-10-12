@@ -134,6 +134,9 @@ public final class ToolCallbackScope implements ToolCallback {
                     }
                     // 只记录 GUARD 步；不记录 TOOL 步、不触发状态机（避免伪造成功）
                 } else {
+                    // 真实工具已开始执行：打上请求级标记，供"安全重试"判断使用
+                    // （只要执行过任何工具，就不允许自动重试整轮模型调用）
+                    ToolExecutionMarker.markExecuted();
                     // 2. 审计层已记账则不重复；否则由本包装器补记（典型为 PolicyTools）
                     var alreadyRecorded = ToolTraceMarker.consume();
                     if (traceRecorder != null && alreadyRecorded == null) {

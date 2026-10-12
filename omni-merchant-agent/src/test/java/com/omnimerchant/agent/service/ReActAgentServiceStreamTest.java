@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -93,9 +94,20 @@ class ReActAgentServiceStreamTest {
                 .thenReturn("trace-test");
         // 状态机在流式语义测试中不作断言；startRun/completeRun/failRun 均为无副作用桩
         var stateMachine = mock(AgentStateMachineService.class);
+        // ModelRouter 返回桩模型；韧性服务直通；Token 用量不作断言
+        var rateLimiter = mock(com.omnimerchant.agent.ratelimit.TokenRateLimiter.class);
+        when(rateLimiter.allowRequest(any(), anyInt(), anyString()))
+                .thenReturn(com.omnimerchant.agent.ratelimit.RateLimitResult.ok());
+        var router = mock(com.omnimerchant.agent.router.ModelRouter.class);
+        when(router.route(any())).thenReturn(new com.omnimerchant.agent.router.ModelRouter.RoutedModel(
+                model, "deepseek", "deepseek-flash"));
+        var resilience = mock(com.omnimerchant.agent.resilience.LlmResilienceService.class);
+        when(resilience.protectStream(any(), any(), anyString())).thenAnswer(inv ->
+                ((java.util.function.Supplier<reactor.core.publisher.Flux<
+                        org.springframework.ai.chat.model.ChatResponse>>) inv.getArgument(0)).get());
         return new ReActAgentService(
-                provider(model), toolProvider, orchestrator, guard, null, persistence, memory,
-                traceService, stateMachine);
+                toolProvider, orchestrator, guard, null, persistence, memory,
+                traceService, stateMachine, router, resilience);
     }
 
     /** 默认记忆桩：返回「历史 + 当前用户消息」，模拟 ChatController 先落库的语义。 */

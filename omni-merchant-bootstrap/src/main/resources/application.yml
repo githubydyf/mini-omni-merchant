@@ -51,6 +51,32 @@ app:
       base-url: https://api.deepseek.com
       model: deepseek-flash
 
+    # 三层模型调用限流（当前未复现 Tenant 配额体系，先用开发期静态配额）。
+    # Redis Key 仍包含真实 tenantId，不同会话共享同一租户额度。
+    rate-limit:
+      # 第一层：单位时间（固定窗口）请求数上限。
+      qps-limit: 5
+      qps-window-seconds: 1
+      # 第二层：月度 Token 预算（0 = 不限）。
+      monthly-token-budget: 100000
+      # 第三层：同租户并发模型调用上限。
+      concurrent-limit: 3
+      # 并发租约有效期（秒）：进程崩溃后靠它自动回收，避免计数永久残留。
+      concurrent-lease-seconds: 120
+
+    # LLM 熔断 / 超时 / 安全重试。
+    resilience:
+      # 每次模型响应间隔的超时（不等于整轮 Agent 总时长）。
+      timeout-seconds: 70
+      failure-rate-threshold: 50
+      minimum-number-of-calls: 5
+      sliding-window-size: 10
+      wait-duration-in-open-state-seconds: 30
+      # 最多重试次数：主链可能触发 Tool Calling，默认关闭自动重试（0），
+      # 仅保留安全重试机制与测试；确认安全后可调大。
+      max-retries: 0
+      retry-backoff-ms: 300
+
   # PostgreSQL / PgVector —— RAG 检索库（knowledge 模块使用）。
   pgvector:
     url: jdbc:postgresql://localhost:5433/omni_rag

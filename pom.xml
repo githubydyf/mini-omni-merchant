@@ -41,6 +41,8 @@
         <lucene.version>10.3.1</lucene.version>
         <!-- JDBC 读写 pgvector 列（com.pgvector.PGvector） -->
         <pgvector.version>0.1.6</pgvector.version>
+        <!-- LLM 熔断/重试：Resilience4j（本地仓库已有 2.3.0，与参考项目一致） -->
+        <resilience4j.version>2.3.0</resilience4j.version>
     </properties>
 
     <dependencyManagement>
@@ -79,6 +81,18 @@
                 <groupId>com.pgvector</groupId>
                 <artifactId>pgvector</artifactId>
                 <version>${pgvector.version}</version>
+            </dependency>
+
+            <!-- LLM 熔断：Resilience4j（未纳入 Spring Boot BOM，显式固定版本） -->
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-circuitbreaker</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-reactor</artifactId>
+                <version>${resilience4j.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

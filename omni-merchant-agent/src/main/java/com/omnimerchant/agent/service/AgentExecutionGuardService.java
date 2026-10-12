@@ -67,21 +67,29 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AgentExecutionGuardService {
 
-    /** 副作用工具：只有这些需要幂等保护。 */
+    /**
+     * 副作用工具：只有这些需要幂等保护。
+     */
     private static final Set<String> SIDE_EFFECT_TOOLS = Set.of(
             "createReturnRequest", "requestRefundOrReplacement", "requestAddressChange", "escalateToHuman");
 
-    /** 释放锁：仅当 Redis 中的 token 与本次持有的一致才删除（原子 compare-and-delete）。 */
+    /**
+     * 释放锁：仅当 Redis 中的 token 与本次持有的一致才删除（原子 compare-and-delete）。
+     */
     private static final DefaultRedisScript<Long> RELEASE_SCRIPT = new DefaultRedisScript<>(
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
             Long.class);
 
-    /** 续期：仅当持有者 token 一致才刷新 TTL（原子 compare-and-expire）。 */
+    /**
+     * 续期：仅当持有者 token 一致才刷新 TTL（原子 compare-and-expire）。
+     */
     private static final DefaultRedisScript<Long> RENEW_SCRIPT = new DefaultRedisScript<>(
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end",
             Long.class);
 
-    /** 锁续期调度器（守护线程，避免阻塞应用关闭）。 */
+    /**
+     * 锁续期调度器（守护线程，避免阻塞应用关闭）。
+     */
     private static final ScheduledExecutorService LOCK_RENEWER = Executors.newScheduledThreadPool(2, runnable -> {
         var thread = new Thread(runnable, "conversation-lock-renewer");
         thread.setDaemon(true);
@@ -132,7 +140,9 @@ public class AgentExecutionGuardService {
         return lease;
     }
 
-    /** 释放会话锁：原子 compare-and-delete，旧 Lease 不能删除别人的锁。 */
+    /**
+     * 释放会话锁：原子 compare-and-delete，旧 Lease 不能删除别人的锁。
+     */
     public void release(ConversationLease lease) {
         if (lease == null) {
             return;
@@ -150,7 +160,9 @@ public class AgentExecutionGuardService {
         return "omni:agent:conversation-lock:" + tenantId + ":" + conversationUuid;
     }
 
-    /** 会话锁租约：只能由对应 Lease 释放；续期失败即视为失去锁。 */
+    /**
+     * 会话锁租约：只能由对应 Lease 释放；续期失败即视为失去锁。
+     */
     public final class ConversationLease {
 
         private final String key;
@@ -172,7 +184,9 @@ public class AgentExecutionGuardService {
             return token;
         }
 
-        /** 租约是否仍然有效（未释放，且续期未失败）。 */
+        /**
+         * 租约是否仍然有效（未释放，且续期未失败）。
+         */
         public boolean isValid() {
             return active.get() && lockOwned.get();
         }
@@ -225,7 +239,7 @@ public class AgentExecutionGuardService {
      * @throws IllegalStateException 白名单配置了当前不存在的 Tool（配置错误，需尽快暴露）
      */
     public List<ToolCallback> guardedCallbacks(ToolCallback[] callbacks,
-                                              AgentOrchestratorService.SpecialistPlan plan) {
+                                               AgentOrchestratorService.SpecialistPlan plan) {
         var callbackByName = Arrays.stream(callbacks)
                 .collect(Collectors.toMap(
                         callback -> callback.getToolDefinition().name(),
@@ -251,7 +265,9 @@ public class AgentExecutionGuardService {
         return new GuardedToolCallback(delegate);
     }
 
-    /** 运行时执行：校验 ToolContext → 白名单 → 锁有效性 → 副作用幂等 → 真实工具。 */
+    /**
+     * 运行时执行：校验 ToolContext → 白名单 → 锁有效性 → 副作用幂等 → 真实工具。
+     */
     private String executeGuarded(ToolCallback delegate, String toolInput, ToolContext toolContext) {
         var context = toolContext == null ? Map.<String, Object>of() : toolContext.getContext();
         var toolName = delegate.getToolDefinition().name();
@@ -421,7 +437,9 @@ public class AgentExecutionGuardService {
         return toolName + ":" + sha256(canonicalJson(toolInput)).substring(0, 32);
     }
 
-    /** 抽取稳定业务字段：订单号 + 业务动作。 */
+    /**
+     * 抽取稳定业务字段：订单号 + 业务动作。
+     */
     private String stableBusinessFields(String toolInput) {
         try {
             var node = objectMapper.readTree(toolInput);
@@ -532,7 +550,9 @@ public class AgentExecutionGuardService {
         }
     }
 
-    /** 运行时二次校验包装：无 ToolContext 一律拒绝。 */
+    /**
+     * 运行时二次校验包装：无 ToolContext 一律拒绝。
+     */
     private final class GuardedToolCallback implements ToolCallback {
 
         private final ToolCallback delegate;

@@ -35,6 +35,19 @@ class FailureAttributionServiceTest {
     }
 
     @Test
+    void shouldClassifyRateLimitedAndCircuitOpen() {
+        assertThat(service.classify(
+                new com.omnimerchant.agent.ratelimit.RateLimitedChatModel.RateLimitedException("QPS_LIMITED")))
+                .isEqualTo("RATE_LIMITED");
+        var cb = io.github.resilience4j.circuitbreaker.CircuitBreaker
+                .ofDefaults("t");
+        assertThat(service.classify(
+                io.github.resilience4j.circuitbreaker.CallNotPermittedException
+                        .createCallNotPermittedException(cb)))
+                .isEqualTo("CIRCUIT_OPEN");
+    }
+
+    @Test
     void shouldFallbackToUnknown() {
         assertThat(service.classify(null)).isEqualTo("UNKNOWN");
         assertThat(service.classifyMessage("")).isEqualTo("UNKNOWN");
