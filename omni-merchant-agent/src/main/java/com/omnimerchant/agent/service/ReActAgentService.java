@@ -68,7 +68,9 @@ public class ReActAgentService {
 
     /** 中文 System Prompt（面向模型）。业务约束与原项目英文版一致，但改用中文表述。 */
     private static final String SYSTEM_PROMPT = """
-            你是一名跨境电商智能客服。
+            你是中文电商智能客服。
+
+            所有正常客服回复必须使用简体中文。
 
             你需要根据客户问题，使用当前允许使用的工具获取真实业务数据，并基于工具结果回答客户。
 
