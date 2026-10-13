@@ -8,9 +8,9 @@ import com.omnimerchant.agent.service.IntentClassificationService;
 import com.omnimerchant.agent.memory.ConversationMemoryService;
 import com.omnimerchant.agent.service.ReActAgentService;
 import com.omnimerchant.agent.service.WidgetSessionService;
+import com.omnimerchant.agent.service.AgentTraceService;
 import com.omnimerchant.common.constant.Constants;
 import com.omnimerchant.common.dto.R;
-import com.omnimerchant.common.exception.BusinessException;
 import com.omnimerchant.common.exception.ErrorCode;
 import com.omnimerchant.common.util.JwtUtil.WidgetCustomerPrincipal;
 import com.omnimerchant.tenant.context.TenantContextHolder;
@@ -52,6 +52,7 @@ public class WidgetController {
     private final ChatMessagePersistenceService chatMessagePersistenceService;
     private final ConversationMemoryService conversationMemoryService;
     private final IntentClassificationService intentClassificationService;
+    private final AgentTraceService agentTraceService;
     private final ReActAgentService reActAgentService;
     private final ObjectMapper objectMapper;
 
@@ -108,9 +109,24 @@ public class WidgetController {
                     request.conversationUuid(), principal.tenantId());
             // 3. 分类前先持久化用户消息；兼容旧请求字段，但不信任买家传入的 intent。
             var savedUserMessage = chatMessagePersistenceService.saveUserMessage(
-                    conversation, request.message(), "UNKNOWN");
+                    conversation, request.message(), null);
             conversationMemoryService.syncUserMessage(conversation, savedUserMessage);
             var classification = intentClassificationService.classify(conversation, request.message());
+            if (classification.failed()) {
+                // 保留已保存的用户消息，但不更新会话意图，也不启动 Agent、工具或助手消息落库。
+                var traceId = agentTraceService.startChatRun(conversation.getTenantId(),
+                        conversation.getConversationUuid(), null, classification.modelProvider(),
+                        classification.modelName(), request.message());
+                agentTraceService.recordIntentClassification(traceId, request.message(), classification);
+                agentTraceService.failRunWithReason(traceId, classification.failureCategory(),
+                        classification.failureReason(), classification.latencyMs());
+                log.warn("Widget 分类调用失败：tenantId={}, conversationUuid={}, traceId={}, "
+                                + "classificationStatus={}, failureCategory={}, modelProvider={}, modelName={}, elapsedMs={}",
+                        conversation.getTenantId(), conversation.getConversationUuid(), traceId,
+                        classification.status(), classification.failureCategory(), classification.modelProvider(),
+                        classification.modelName(), classification.latencyMs());
+                return ChatSseSupport.error(classification.failureReason(), conversation.getConversationUuid(), "Widget");
+            }
             chatMessagePersistenceService.updateIntent(conversation, classification.intent());
 
             log.info("Widget 对话开始：tenantId={}, conversationUuid={}",

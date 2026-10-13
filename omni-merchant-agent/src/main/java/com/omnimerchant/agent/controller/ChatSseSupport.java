@@ -7,6 +7,7 @@ import com.omnimerchant.agent.service.IntentClassificationService.IntentClassifi
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.scheduler.Schedulers;
+import reactor.core.publisher.Flux;
 
 /**
  * Chat SSE 转发适配层。
@@ -44,8 +45,18 @@ public final class ChatSseSupport {
     public static SseEmitter stream(ReActAgentService reActAgentService, Conversation conversation,
                                     String message, String intent, String label,
                                     IntentClassificationResult classification) {
+        var events = classification == null ? reActAgentService.chatEvents(conversation, message, intent)
+                : reActAgentService.chatEvents(conversation, message, intent, classification);
+        return forward(events, conversation.getConversationUuid(), label);
+    }
+
+    /** 分类调用失败只发送真实 error，不启动 Agent，也不发送 final。 */
+    public static SseEmitter error(String message, String conversationUuid, String label) {
+        return forward(Flux.just(ChatStreamEvent.error(message)), conversationUuid, label);
+    }
+
+    private static SseEmitter forward(Flux<ChatStreamEvent> events, String conversationUuid, String label) {
         var emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        var conversationUuid = conversation.getConversationUuid();
 
         emitter.onCompletion(() -> log.info("{}结束：conv={}", label, conversationUuid));
         emitter.onTimeout(() -> {
@@ -54,8 +65,7 @@ public final class ChatSseSupport {
         });
         emitter.onError(error -> log.warn("{}连接异常：conv={}, error={}", label, conversationUuid, error.getMessage()));
 
-        (classification == null ? reActAgentService.chatEvents(conversation, message, intent)
-                : reActAgentService.chatEvents(conversation, message, intent, classification))
+        events
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(
                         event -> {

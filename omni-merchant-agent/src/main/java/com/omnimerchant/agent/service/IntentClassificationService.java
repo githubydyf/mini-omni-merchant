@@ -72,6 +72,7 @@ public class IntentClassificationService {
     private final LlmResilienceService llmResilienceService;
     private final ConversationMemoryService conversationMemoryService;
     private final ObjectMapper objectMapper;
+    private final FailureAttributionService failureAttributionService;
 
     /** 会话由入口完成租户及状态校验，当前消息已落库；这里再次检查租户上下文。 */
     public IntentClassificationResult classify(Conversation conversation, String userMessage) {
@@ -86,6 +87,7 @@ public class IntentClassificationService {
         long startedAt = System.nanoTime();
         var routed = modelRouter.route("INTENT_CLASSIFICATION");
         IntentClassificationResult result;
+        var failureStage = FailureAttributionService.MODEL_UNAVAILABLE;
         try {
             if (!routed.available()) {
                 throw new IllegalStateException("分类模型未配置或不可用");
@@ -94,7 +96,9 @@ public class IntentClassificationService {
                     JsonMapper.builder().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
                             DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
                             .enable(EnumFeature.FAIL_ON_NUMBERS_FOR_ENUMS).build());
+            failureStage = FailureAttributionService.MEMORY_UNAVAILABLE;
             var input = classificationInput(conversation, userMessage);
+            failureStage = FailureAttributionService.MODEL_UNAVAILABLE;
             // 不注册任何工具；租户上下文仅用于复用模型限流，不包含工具权限。
             var options = ToolCallingChatOptions.builder().temperature(0.0).maxTokens(256)
                     .toolCallbacks(List.of()).toolContext(Map.of("tenantId", conversation.getTenantId()));
@@ -119,6 +123,7 @@ public class IntentClassificationService {
                             throw new IllegalArgumentException("分类结果超过允许长度");
                         }
                     }).then().block(TOTAL_TIMEOUT);
+            failureStage = FailureAttributionService.CLASSIFICATION_PARSE_ERROR;
             var parsed = converter.convert(output.toString());
             if (parsed == null || parsed.intent() == null || parsed.reason() == null
                     || parsed.reason().isBlank() || parsed.reason().length() > 300) {
@@ -128,10 +133,15 @@ public class IntentClassificationService {
                     elapsed(startedAt), routed.providerName(), routed.modelName(),
                     parsed.intent() == Intent.UNKNOWN ? "UNCERTAIN" : "SUCCESS");
         } catch (Exception e) {
-            log.warn("意图分类失败：tenantId={}, conversationUuid={}, errorType={}",
-                    conversation.getTenantId(), conversation.getConversationUuid(), e.getClass().getSimpleName());
-            result = new IntentClassificationResult("UNKNOWN", failureReason(e),
-                    elapsed(startedAt), routed.providerName(), routed.modelName(), "FAILED");
+            var category = failureAttributionService.classifyClassificationFailure(e, failureStage);
+            var reason = failureReason(category);
+            // 调用失败没有用户意图，不能把基础设施故障伪装为模型判断的 UNKNOWN。
+            result = new IntentClassificationResult(null, reason,
+                    elapsed(startedAt), routed.providerName(), routed.modelName(), "FAILED", category, reason);
+            log.warn("意图分类失败：tenantId={}, conversationUuid={}, classificationStatus={}, failureCategory={}, "
+                            + "modelProvider={}, modelName={}, elapsedMs={}, errorType={}",
+                    conversation.getTenantId(), conversation.getConversationUuid(), result.status(), category,
+                    routed.providerName(), routed.modelName(), result.latencyMs(), e.getClass().getSimpleName());
         }
         log.info("意图分类完成：tenantId={}, conversationUuid={}, intent={}, status={}, latencyMs={}",
                 conversation.getTenantId(), conversation.getConversationUuid(), result.intent(),
@@ -140,24 +150,19 @@ public class IntentClassificationService {
     }
 
     /** 记录真实故障类别，不把包含用户原文或凭据的底层异常直接写入轨迹。 */
-    private String failureReason(Exception error) {
-        Throwable cause = error;
-        while (cause.getCause() != null && cause.getCause() != cause) {
-            cause = cause.getCause();
-        }
-        String reason;
-        if (cause instanceof java.util.concurrent.TimeoutException) {
-            reason = "分类模型响应超时";
-        } else if (cause instanceof com.omnimerchant.agent.ratelimit.RateLimitedChatModel.RateLimitedException limited) {
-            reason = "分类模型配额或并发限制拒绝本次请求（" + limited.rejectReason() + "）";
-        } else if (cause instanceof io.github.resilience4j.circuitbreaker.CallNotPermittedException) {
-            reason = "分类模型熔断保护已开启";
-        } else if (cause instanceof IllegalArgumentException || cause instanceof tools.jackson.core.JacksonException) {
-            reason = "分类模型返回的结构或意图不符合约束";
-        } else {
-            reason = "分类模型或会话上下文暂时不可用";
-        }
-        return reason + "，请稍后重试或补充具体问题。";
+    private String failureReason(String category) {
+        var reason = switch (category) {
+            case "BUDGET_EXCEEDED" -> "本月模型用量额度已用完，请联系管理员。";
+            case "QPS_LIMITED" -> "当前咨询较为频繁，请稍等片刻后再发送消息。";
+            case "CONCURRENT_LIMITED" -> "当前同时进行的咨询较多，请稍后重试。";
+            case "RATE_LIMITER_UNAVAILABLE" -> "模型限流服务暂时不可用，请稍后重试。";
+            case "CIRCUIT_OPEN" -> "模型服务暂时不可用，已触发熔断保护，请稍后重试。";
+            case "LLM_TIMEOUT" -> "意图识别模型响应超时，请稍后重试。";
+            case "CLASSIFICATION_PARSE_ERROR" -> "意图识别模型返回的格式不符合要求，请稍后重试。";
+            case "MEMORY_UNAVAILABLE" -> "暂时无法读取会话上下文，请稍后重试。";
+            default -> "意图识别模型未配置或暂时不可用，请稍后重试或联系管理员。";
+        };
+        return "[" + category + "] " + reason;
     }
 
     private String classificationInput(Conversation conversation, String currentMessage) throws Exception {
@@ -197,5 +202,23 @@ public class IntentClassificationService {
 
     /** 未提供经过校准的置信指标，因此不设置 confidence。 */
     public record IntentClassificationResult(String intent, String reason, Integer latencyMs,
-                                             String modelProvider, String modelName, String status) {}
+                                             String modelProvider, String modelName, String status,
+                                             String failureCategory, String failureReason) {
+        public IntentClassificationResult {
+            if ("FAILED".equals(status)) {
+                intent = null;
+            }
+        }
+        /** 成功和不确定结果无需失败字段；兼容现有服务端调用。 */
+        public IntentClassificationResult(String intent, String reason, Integer latencyMs,
+                                          String modelProvider, String modelName, String status) {
+            this(intent, reason, latencyMs, modelProvider, modelName, status,
+                    "FAILED".equals(status) ? FailureAttributionService.UNKNOWN : null,
+                    "FAILED".equals(status) ? reason : null);
+        }
+
+        public boolean failed() {
+            return "FAILED".equals(status);
+        }
+    }
 }

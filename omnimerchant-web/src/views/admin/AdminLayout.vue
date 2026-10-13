@@ -598,7 +598,15 @@
 <!--</style>-->
 
 <template>
-  <a-layout class="admin-shell">
+  <!--
+    is-fill：仅统一收件箱这类“整屏三栏”页面启用。
+    让工作区锁定在可视高度内，由页面自身管理内部滚动，
+    避免聊天消息变多时把整个后台页面持续撑高。
+  -->
+  <a-layout
+      class="admin-shell"
+      :class="{ 'is-fill': isFillPage }"
+  >
 
     <!-- ============================== -->
     <!-- 桌面端侧边栏 -->
@@ -1167,6 +1175,21 @@ const currentPage = computed(
           description: "",
 
         }
+);
+
+
+/* ============================== */
+/* 整屏页面识别 */
+/* ============================== */
+
+/**
+ * 统一收件箱需要“固定高度 + 内部三栏独立滚动”的整屏布局。
+ * 只有这类页面才启用 is-fill，其它后台页面仍按普通文档流滚动，互不影响。
+ */
+const isFillPage = computed(
+    () =>
+        route.path === "/admin/inbox" ||
+        route.path.startsWith("/admin/inbox/")
 );
 
 
@@ -1919,6 +1942,52 @@ onBeforeUnmount(() => {
     font-size: 16px;
 
   }
+
+}
+
+
+/* ============================== */
+/* 整屏页面（统一收件箱）高度约束 */
+/* ============================== */
+
+/*
+ * 只在 is-fill 页面锁定视图高度：
+ *   admin-shell(100vh) → workspace(100vh, 纵向 flex)
+ *     → topbar(76px 固定) + content-area(flex:1, min-height:0, 内部滚动)
+ * 关键点：content-area / content-inner 必须 min-height:0，
+ * 否则 flex 子项会被内容撑高，导致整个页面出现外滚动条。
+ */
+.admin-shell.is-fill {
+
+  height: 100vh;
+
+  min-height: 0;
+
+  overflow: hidden;
+
+}
+
+.admin-shell.is-fill .workspace {
+
+  height: 100vh;
+
+  min-height: 0;
+
+}
+
+.admin-shell.is-fill .content-area {
+
+  flex: 1;
+
+  min-height: 0;
+
+  overflow: hidden;
+
+}
+
+.admin-shell.is-fill .content-inner {
+
+  height: 100%;
 
 }
 

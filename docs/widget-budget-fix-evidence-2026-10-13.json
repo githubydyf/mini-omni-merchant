@@ -1,0 +1,221 @@
+{
+  "date": "2026-10-13",
+  "beforeMainRuntime": [
+    "pid=54632",
+    "qpsLimit=5",
+    "monthlyTokenBudget=100000",
+    "concurrentLimit=3",
+    "model=deepseek-flash",
+    "apiKeyPresent=true",
+    "modelBeanPresent=true",
+    "profiles=[]",
+    "circuitState=CLOSED",
+    "budgetSource=configurationProperties,value=100000",
+    "budgetSource=Config resource 'class path resource [application.yml]' via location 'optional:classpath:/',value=100000",
+    "luaSha1=78c8e440f88fe907e2996d220445a8f88e92528b"
+  ],
+  "otherRuntimeBefore": [
+    "pid=24240",
+    "qpsLimit=5",
+    "monthlyTokenBudget=0",
+    "concurrentLimit=3",
+    "model=deepseek-flash",
+    "apiKeyPresent=true",
+    "modelBeanPresent=true",
+    "profiles=[]",
+    "circuitState=CLOSED",
+    "budgetSource=configurationProperties,value=0",
+    "budgetSource=Config resource 'class path resource [application.yml]' via location 'optional:classpath:/',value=0",
+    "luaSha1=78c8e440f88fe907e2996d220445a8f88e92528b"
+  ],
+  "afterMainRuntime": [
+    "pid=60032",
+    "qpsLimit=5",
+    "monthlyTokenBudget=0",
+    "concurrentLimit=3",
+    "model=deepseek-flash",
+    "apiKeyPresent=true",
+    "modelBeanPresent=true",
+    "profiles=[]",
+    "circuitState=CLOSED",
+    "budgetSource=configurationProperties,value=0",
+    "budgetSource=Config resource 'class path resource [application.yml]' via location 'optional:classpath:/',value=0",
+    "luaSha1=75abfcbb7ce6bf7b00d5bd404ff301fb8526cd13"
+  ],
+  "negativeTestRuntime": [
+    "pid=55532",
+    "qpsLimit=5",
+    "monthlyTokenBudget=1",
+    "concurrentLimit=3",
+    "model=deepseek-flash",
+    "apiKeyPresent=true",
+    "modelBeanPresent=true",
+    "profiles=[]",
+    "circuitState=CLOSED",
+    "budgetSource=configurationProperties,value=1",
+    "budgetSource=commandLineArgs,value=1",
+    "budgetSource=Config resource 'class path resource [application.yml]' via location 'optional:classpath:/',value=0",
+    "luaSha1=75abfcbb7ce6bf7b00d5bd404ff301fb8526cd13"
+  ],
+  "orderQuery": {
+    "conversationUuid": "4688448e-034e-4e1f-977a-ecdd62196e0a",
+    "first": {
+      "run": {
+        "model": "deepseek-flash",
+        "intent": "ORDER_STATUS",
+        "status": "SUCCESS",
+        "traceId": "2701b39ac7494d98a14b217321c50b77",
+        "failureCategory": null
+      },
+      "steps": [
+        {
+          "name": "classify_intent",
+          "type": "INTENT_CLASSIFICATION",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{\"failureCategory\":null,\"provider\":\"deepseek\",\"model\":\"deepseek-flash\",\"intent\":\"ORDER_STATUS\"}"
+        },
+        {
+          "name": "supervisor_worker_plan",
+          "type": "ROUTER",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{\"requiresApproval\":false,\"requiresIdentityVerification\":true,\"recommendHumanHandoff\":false,\"riskLevel\":\"MEDIUM\",\"toolAllowlist\":[\"queryOrder\"],\"specialist\":\"order\"}"
+        },
+        {
+          "name": "AI_WORKING",
+          "type": "STATE",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{\"specialist\":\"order\"}"
+        },
+        {
+          "name": "load_recent_messages",
+          "type": "MEMORY",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{\"conversationUuid\":\"4688448e-034e-4e1f-977a-ecdd62196e0a\",\"historyCount\":1}"
+        },
+        {
+          "name": "queryOrder",
+          "type": "TOOL",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{\"errorCode\":\"\"}"
+        },
+        {
+          "name": "assistant_response",
+          "type": "FINAL_ANSWER",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{}"
+        }
+      ],
+      "count": {
+        "user": 1,
+        "assistant": 1
+      },
+      "hasFinal": true,
+      "hasError": false
+    },
+    "verified": {
+      "run": {
+        "model": "deepseek-flash",
+        "intent": "ORDER_STATUS",
+        "status": "SUCCESS",
+        "traceId": "4d56f130fc444059ab76468de5da0f53",
+        "failureCategory": null
+      },
+      "steps": [
+        {
+          "name": "classify_intent",
+          "type": "INTENT_CLASSIFICATION",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{\"failureCategory\":null,\"provider\":\"deepseek\",\"model\":\"deepseek-flash\",\"intent\":\"ORDER_STATUS\"}"
+        },
+        {
+          "name": "supervisor_worker_plan",
+          "type": "ROUTER",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{\"requiresApproval\":false,\"requiresIdentityVerification\":true,\"recommendHumanHandoff\":false,\"riskLevel\":\"MEDIUM\",\"toolAllowlist\":[\"queryOrder\"],\"specialist\":\"order\"}"
+        },
+        {
+          "name": "AI_WORKING",
+          "type": "STATE",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{\"specialist\":\"order\"}"
+        },
+        {
+          "name": "load_recent_messages",
+          "type": "MEMORY",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{\"conversationUuid\":\"4688448e-034e-4e1f-977a-ecdd62196e0a\",\"historyCount\":3}"
+        },
+        {
+          "name": "queryOrder",
+          "type": "TOOL",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{\"errorCode\":\"\"}"
+        },
+        {
+          "name": "assistant_response",
+          "type": "FINAL_ANSWER",
+          "status": "SUCCESS",
+          "category": null,
+          "metadata": "{}"
+        }
+      ],
+      "count": {
+        "user": 2,
+        "assistant": 2
+      },
+      "hasFinal": true,
+      "hasError": false
+    },
+    "orderVerified": true,
+    "orderStatus": "paid"
+  },
+  "budgetFailure": {
+    "conversationUuid": "4b8b051f-bc3f-4605-87bc-ea278b4dc0cf",
+    "run": {
+      "model": "deepseek-flash",
+      "intent": null,
+      "status": "FAILED",
+      "traceId": "6be332aaffd94f0685b8bb9e0ae60432",
+      "failureCategory": "BUDGET_EXCEEDED"
+    },
+    "steps": [
+      {
+        "name": "classify_intent",
+        "type": "INTENT_CLASSIFICATION",
+        "status": "FAILED",
+        "category": "BUDGET_EXCEEDED",
+        "metadata": "{\"failureCategory\":\"BUDGET_EXCEEDED\",\"provider\":\"deepseek\",\"model\":\"deepseek-flash\",\"intent\":null}"
+      },
+      {
+        "name": "failure_attribution",
+        "type": "FAILURE",
+        "status": "FAILED",
+        "category": "BUDGET_EXCEEDED",
+        "metadata": "{\"category\":\"BUDGET_EXCEEDED\"}"
+      }
+    ],
+    "count": {
+      "user": 1,
+      "assistant": 0
+    },
+    "hasFinal": false,
+    "hasError": true
+  },
+  "redisAfter": {
+    "month": "202610",
+    "tenant1001Usage": "115135",
+    "tenant1001Ttl": "2676934",
+    "tenant1002Usage": "67638"
+  }
+}

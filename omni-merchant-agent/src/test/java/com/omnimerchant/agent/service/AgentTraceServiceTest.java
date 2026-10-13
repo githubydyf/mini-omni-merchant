@@ -162,6 +162,24 @@ class AgentTraceServiceTest {
         assertThat(captor.getValue().getFailureCategory()).isEqualTo("LLM_TIMEOUT");
     }
 
+    @org.junit.jupiter.api.DisplayName("分类步骤与失败收尾均保留真实限流类别")
+    @Test
+    void classificationFailureKeepsOriginalCategory() {
+        when(runMapper.selectOne(any())).thenReturn(run("trace-1"));
+        when(stepMapper.selectCount(any())).thenReturn(0L, 1L);
+        var result = new IntentClassificationService.IntentClassificationResult(null,
+                "[BUDGET_EXCEEDED] 本月模型额度已用完。", 12, "deepseek", "测试模型", "FAILED",
+                "BUDGET_EXCEEDED", "[BUDGET_EXCEEDED] 本月模型额度已用完。");
+        service.recordIntentClassification("trace-1", "订单查询", result);
+        service.failRunWithReason("trace-1", result.failureCategory(), result.failureReason(), 12);
+        var captor = ArgumentCaptor.forClass(AgentStep.class);
+        verify(stepMapper, org.mockito.Mockito.times(2)).insert(captor.capture());
+        assertThat(captor.getAllValues()).extracting(AgentStep::getFailureCategory)
+                .containsExactly("BUDGET_EXCEEDED", "BUDGET_EXCEEDED");
+        assertThat(captor.getAllValues()).extracting(AgentStep::getStepType)
+                .containsExactly("INTENT_CLASSIFICATION", "FAILURE");
+    }
+
     @Test
     void failRunIfStillRunningShouldSkipWhenAlreadySuccessful() {
         var finished = run("trace-1");

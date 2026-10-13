@@ -53,4 +53,15 @@ class FailureAttributionServiceTest {
         assertThat(service.classifyMessage("")).isEqualTo("UNKNOWN");
         assertThat(service.classifyMessage("某种未归类的问题")).isEqualTo("UNKNOWN");
     }
+
+    @org.junit.jupiter.api.DisplayName("包装后的限流与超时异常仍保留原始类别")
+    @Test
+    void wrappedClassificationFailureHasOriginalCategory() {
+        var limited = new IllegalStateException("分类调用失败",
+                new com.omnimerchant.agent.ratelimit.RateLimitedChatModel.RateLimitedException("QPS_LIMITED"));
+        assertThat(service.classifyClassificationFailure(limited, "MODEL_UNAVAILABLE")).isEqualTo("QPS_LIMITED");
+        assertThat(service.classifyClassificationFailure(new IllegalStateException("阻塞等待超时", new TimeoutException()),
+                "MODEL_UNAVAILABLE")).isEqualTo("LLM_TIMEOUT");
+        assertThat(service.classifyMessage("[BUDGET_EXCEEDED] 本月额度已用完")).isEqualTo("BUDGET_EXCEEDED");
+    }
 }

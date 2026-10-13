@@ -282,10 +282,7 @@ public class ReActAgentService {
                     conversation.getTenantId(), conversation.getConversationUuid(), intent,
                     routed.providerName(), routed.modelName(), userMessage);
             if (classification != null) {
-                agentTraceService.addStep(traceId, "INTENT_CLASSIFICATION", "classify_intent",
-                        classification.status(), userMessage, classification.reason(), null,
-                        classification.latencyMs(), Map.of("intent", classification.intent(),
-                                "provider", classification.modelProvider(), "model", classification.modelName()));
+                agentTraceService.recordIntentClassification(traceId, userMessage, classification);
             }
             log.info("Agent 流式编排：traceId={}, intent={}, specialist={}, allowlist={}, provider={}, model={}",
                     traceId, intent, plan.specialistKey(), plan.toolAllowlist(),
@@ -298,7 +295,9 @@ public class ReActAgentService {
 
             if (plan.toolAllowlist().isEmpty()) {
                 terminal.set(true);
-                agentTraceService.failRunWithReason(traceId, "INTENT_UNSUPPORTED",
+                var category = classification != null && "UNCERTAIN".equals(classification.status())
+                        ? "INTENT_UNCERTAIN" : "INTENT_UNSUPPORTED";
+                agentTraceService.failRunWithReason(traceId, category,
                         "当前意图暂不支持自动处理", elapsed(startedAt));
                 return Flux.just(ChatStreamEvent.error(
                         "暂时无法确定您本轮需要的帮助，请补充具体问题或稍后重试。"));

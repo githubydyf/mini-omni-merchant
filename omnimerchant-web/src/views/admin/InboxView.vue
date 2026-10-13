@@ -28,45 +28,51 @@
         <div class="panel-title">
           <strong>会话</strong><span>{{ total }} 条</span>
         </div>
-        <BackendEmptyState
-          v-if="loading || error || !items.length"
-          :loading="loading"
-          :error="error"
-          description="当前队列没有会话"
-          @retry="loadItems"
-        />
-        <button
-          v-for="item in items"
-          v-else
-          :key="item.conversationUuid || item.ticketId"
-          class="conversation-item"
-          :class="{
-            active: selected?.conversationUuid === item.conversationUuid,
-          }"
-          type="button"
-          @click="selectItem(item)"
-        >
-          <span class="avatar">{{
-            initial(item.customerName || item.customerEmail)
-          }}</span>
-          <span class="conversation-copy">
-            <span class="conversation-line"
-              ><strong>{{
-                item.customerName || item.customerEmail || "未知客户"
-              }}</strong
-              ><small>{{ relative(item.lastMessageAt) }}</small></span
+        <!-- 会话列表独立滚动：标题固定在顶部，只有列表内部滚动 -->
+        <div ref="conversationScroll" class="conversation-scroll">
+          <BackendEmptyState
+            v-if="loading || error || !items.length"
+            :loading="loading"
+            :error="error"
+            description="当前队列没有会话"
+            @retry="loadItems"
+          />
+          <template v-else>
+            <button
+              v-for="item in items"
+              :key="item.conversationUuid || item.ticketId"
+              class="conversation-item"
+              :class="{
+                active: selected?.conversationUuid === item.conversationUuid,
+              }"
+              type="button"
+              @click="selectItem(item)"
             >
-            <span class="conversation-line"
-              ><span>{{ item.intent || item.channelLabel || "普通咨询" }}</span
-              ><StatusTag
-                :status="item.statusLabel"
-                :label="item.statusLabel"
-            /></span>
-            <small class="conversation-summary">{{
-              `${item.messageCount || 0} 条消息`
-            }}</small>
-          </span>
-        </button>
+              <span class="avatar">{{
+                initial(item.customerName || item.customerEmail)
+              }}</span>
+              <span class="conversation-copy">
+                <span class="conversation-line"
+                  ><strong>{{
+                    item.customerName || item.customerEmail || "未知客户"
+                  }}</strong
+                  ><small>{{ relative(item.lastMessageAt) }}</small></span
+                >
+                <span class="conversation-line"
+                  ><span>{{
+                    item.intent || item.channelLabel || "普通咨询"
+                  }}</span
+                  ><StatusTag
+                    :status="item.statusLabel"
+                    :label="item.statusLabel"
+                /></span>
+                <small class="conversation-summary">{{
+                  `${item.messageCount || 0} 条消息`
+                }}</small>
+              </span>
+            </button>
+          </template>
+        </div>
       </section>
 
       <section class="message-workspace">
@@ -98,36 +104,54 @@
               />
             </div>
           </div>
-          <div class="message-scroll">
-            <BackendEmptyState
-              v-if="contextLoading || contextError"
-              :loading="contextLoading"
-              :error="contextError"
-              @retry="loadContext"
-            />
+          <!-- 聊天滚动区：composer 是它的兄弟节点，互不干扰 -->
+          <div class="chat-body">
             <div
-              v-for="message in context?.messages || []"
-              v-else
-              :key="message.messageUuid"
-              class="message-row"
-              :class="message.role"
+              ref="messageScroll"
+              class="message-scroll"
+              @scroll.passive="onMessageScroll"
             >
-              <div class="message-meta">
-                <strong>{{ roleLabel(message.role) }}</strong
-                ><span>{{ formatTime(message.createdAt) }}</span>
-              </div>
-              <div class="message-bubble">{{ message.content }}</div>
-              <div v-if="message.translatedContent" class="translation-note">
-                <TranslationOutlined /> Agent 输入：{{
-                  message.translatedContent
-                }}
-                <span
-                  >{{ message.translationProvider }} ·
-                  {{ message.translationLatencyMs }} ms</span
-                >
+              <BackendEmptyState
+                v-if="contextLoading || contextError"
+                :loading="contextLoading"
+                :error="contextError"
+                @retry="loadContext()"
+              />
+              <div
+                v-for="message in context?.messages || []"
+                v-else
+                :key="message.messageUuid"
+                class="message-row"
+                :class="message.role"
+              >
+                <div class="message-meta">
+                  <strong>{{ roleLabel(message.role) }}</strong
+                  ><span>{{ formatTime(message.createdAt) }}</span>
+                </div>
+                <div class="message-bubble">{{ message.content }}</div>
+                <div v-if="message.translatedContent" class="translation-note">
+                  <TranslationOutlined /> Agent 输入：{{
+                    message.translatedContent
+                  }}
+                  <span
+                    >{{ message.translationProvider }} ·
+                    {{ message.translationLatencyMs }} ms</span
+                  >
+                </div>
               </div>
             </div>
+
+            <!-- 向上查看历史时提供“回到最新消息”，不强行打断阅读 -->
+            <button
+              v-if="showBackToLatest"
+              class="back-to-latest"
+              type="button"
+              @click="scrollToLatest"
+            >
+              回到最新消息
+            </button>
           </div>
+
           <div class="composer">
             <div class="composer-tools">
               <span>人工回复将写入完整会话记录</span>
@@ -170,7 +194,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import {
   ProfileOutlined,
@@ -206,6 +230,40 @@ const error = ref(""),
 const contextDrawerOpen = ref(false),
   viewport = ref(window.innerWidth);
 const compact = computed(() => viewport.value < 1280);
+
+/*
+ * 消息滚动相关状态：
+ * - messageScroll：中间聊天滚动容器（composer 是它的兄弟节点，不参与滚动）；
+ * - atBottom：客服当前是否停留在最新消息附近，用于决定新消息到来时是否跟随；
+ * - 距离底部小于 100px 视为“正在查看最新消息”。
+ */
+const messageScroll = ref<HTMLElement | null>(null);
+const conversationScroll = ref<HTMLElement | null>(null);
+const atBottom = ref(true);
+const NEAR_BOTTOM_PX = 100;
+const showBackToLatest = computed(
+  () => !atBottom.value && (context.value?.messages?.length || 0) > 0,
+);
+
+function isNearBottom(el: HTMLElement) {
+  return (
+    el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
+  );
+}
+
+function onMessageScroll() {
+  const el = messageScroll.value;
+  if (el) atBottom.value = isNearBottom(el);
+}
+
+/** 滚动到最新消息（切换会话 / 首次加载 / 发送回复后使用，不做动画避免跳动）。 */
+async function scrollToLatest() {
+  await nextTick();
+  const el = messageScroll.value;
+  if (!el) return;
+  el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+  atBottom.value = true;
+}
 
 async function refresh() {
   await Promise.all([loadQueues(), loadItems()]);
@@ -249,10 +307,14 @@ async function selectItem(item: InboxWorkItem) {
     return;
   }
   selected.value = item;
-  await loadContext();
+  // 切换会话：始终定位到新会话的最新消息
+  await loadContext({ stickToBottom: true });
 }
-async function loadContext() {
+async function loadContext(options?: { stickToBottom?: boolean }) {
   if (!selected.value?.conversationUuid) return;
+  // 是否在消息更新后跟随到底部：切换会话强制滚动；
+  // 否则只有在客服本就停留在最新消息附近时才跟随，避免打断向上查看历史。
+  const stick = options?.stickToBottom === true || atBottom.value;
   contextLoading.value = true;
   contextError.value = "";
   try {
@@ -265,6 +327,9 @@ async function loadContext() {
   } finally {
     contextLoading.value = false;
   }
+  // 注意：必须等 contextLoading 置为 false、消息节点渲染完成后再计算滚动高度，
+  // 否则拿到的 scrollHeight 里还没有消息内容。
+  if (stick) await scrollToLatest();
 }
 async function takeover() {
   if (!selected.value) return;
@@ -287,7 +352,8 @@ async function sendReply() {
     closeAfterReply.value = false;
     message.success("回复已写入会话");
     await refresh();
-    await loadContext();
+    // 发送回复后定位到最新消息
+    await loadContext({ stickToBottom: true });
   } finally {
     sending.value = false;
   }
@@ -341,9 +407,20 @@ onBeforeUnmount(() => window.removeEventListener("resize", resize));
   margin-left: 4px;
   color: #667085;
 }
+/*
+ * 页面整体纵向撑满内容区：工具栏固定高度，收件箱三栏占满剩余高度。
+ * min-height:0 是关键，否则 flex 子项会被内部消息撑高。
+ */
+.inbox-view {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .inbox-shell {
-  height: calc(100vh - 154px);
-  min-height: 620px;
+  /* 高度 = 工具栏之外的剩余高度（父级已有确定高度） */
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 310px minmax(420px, 1fr) 310px;
   margin-top: 12px;
@@ -356,13 +433,18 @@ onBeforeUnmount(() => window.removeEventListener("resize", resize));
 .message-workspace,
 .context-panel {
   min-width: 0;
+  min-height: 0;
 }
 .conversation-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border-right: 1px solid var(--omni-border);
-  overflow: auto;
+  overflow: hidden;
 }
 .panel-title {
   height: 49px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -372,6 +454,13 @@ onBeforeUnmount(() => window.removeEventListener("resize", resize));
 .panel-title span {
   color: #98a2b3;
   font-size: 12px;
+}
+/* 会话列表滚动容器：标题固定，只有这里滚动 */
+.conversation-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .conversation-item {
   width: 100%;
@@ -436,10 +525,13 @@ onBeforeUnmount(() => window.removeEventListener("resize", resize));
 .message-workspace {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   background: #f8fafc;
 }
 .conversation-header {
   height: 62px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -451,6 +543,7 @@ onBeforeUnmount(() => window.removeEventListener("resize", resize));
 .conversation-header > div:first-child {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .conversation-header span {
   margin-top: 3px;
@@ -461,14 +554,25 @@ onBeforeUnmount(() => window.removeEventListener("resize", resize));
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+}
+/* 滚动区外层：为“回到最新消息”提供定位参照 */
+.chat-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 .message-scroll {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 18px;
 }
 .message-row {
   max-width: 78%;
+  min-width: 0;
   margin-bottom: 16px;
 }
 .message-row.user {
@@ -490,6 +594,9 @@ onBeforeUnmount(() => window.removeEventListener("resize", resize));
   color: #344054;
   line-height: 1.65;
   white-space: pre-wrap;
+  /* 长订单号 / 长 URL / 无空格英文串不撑破聊天区，必要时在气泡内换行 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .message-row.user .message-bubble {
   border-color: #cfe0ff;
@@ -499,12 +606,32 @@ onBeforeUnmount(() => window.removeEventListener("resize", resize));
   margin-top: 5px;
   color: #667085;
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 .translation-note span {
   margin-left: 8px;
   color: #98a2b3;
 }
+/* “回到最新消息”悬浮在滚动区底部，不占用消息高度 */
+.back-to-latest {
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  z-index: 5;
+  padding: 5px 12px;
+  border: 1px solid var(--omni-border);
+  border-radius: 999px;
+  background: #fff;
+  color: #175cd3;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.12);
+  cursor: pointer;
+}
+.back-to-latest:hover {
+  background: #f4f8ff;
+}
 .composer {
+  flex: 0 0 auto;
   padding: 12px;
   border-top: 1px solid var(--omni-border);
   background: #fff;
@@ -592,17 +719,21 @@ onBeforeUnmount(() => window.removeEventListener("resize", resize));
 }
 @media (max-width: 767px) {
   .inbox-shell {
-    height: auto;
-    min-height: calc(100vh - 190px);
+    /*
+     * 窄屏仍锁定在剩余高度内：单列时只显示会话列表或聊天面板，
+     * 由被显示的一侧内部滚动，避免整页被消息撑高。
+     */
+    height: 100%;
+    min-height: 0;
     grid-template-columns: 1fr;
   }
   .conversation-list {
-    display: v-bind("selected ? 'none' : 'block'");
+    display: v-bind("selected ? 'none' : 'flex'");
     border-right: 0;
   }
   .message-workspace {
     display: v-bind("selected ? 'flex' : 'none'");
-    min-height: 650px;
+    min-height: 0;
   }
   .message-row {
     max-width: 92%;

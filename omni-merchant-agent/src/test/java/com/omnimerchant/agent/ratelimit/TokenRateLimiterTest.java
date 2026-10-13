@@ -152,4 +152,44 @@ class TokenRateLimiterTest {
         when(valueOps.increment(anyString(), anyLong())).thenThrow(new RuntimeException("Redis 故障"));
         limiter.recordTokenUsage(1001L, 1000L);
     }
+
+    @org.junit.jupiter.api.DisplayName("零月度预算及其他配额按正确顺序传给 Lua，月份和租户来自本轮调用")
+    @Test
+    void unlimitedBudgetAndLuaArgumentOrderAreCorrect() {
+        ReflectionTestUtils.setField(limiter, "monthlyTokenBudget", 0L);
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenAnswer(inv -> {
+            var raw = inv.getRawArguments();
+            var month = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM"));
+            assertThat(((List<?>) raw[1]).toArray()).containsExactly("omni:rate:qps:1002", "omni:rate:budget:1002:" + month,
+                    "omni:rate:concurrent:1002");
+            var arguments = (Object[]) raw[2];
+            assertThat(arguments).hasSize(9);
+            assertThat(java.util.Arrays.copyOf(arguments, 8)).containsExactly("5", "0", "1000", "3", "1",
+                    "2764800", "测试租约", "120000");
+            assertThat(Long.parseLong((String) arguments[8])).isGreaterThan(0);
+            return List.of(1L, "OK");
+        });
+        assertThat(limiter.allowRequest(1002L, 1000, "测试租约").allowed()).isTrue();
+        // 准入阶段不把估算值写成真实累计用量。
+        verify(valueOps, never()).increment(anyString(), anyLong());
+    }
+
+    @org.junit.jupiter.api.DisplayName("Spring 默认和显式配置均能关闭月度预算，同时保留 QPS 与并发保护")
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void springLoadsUnlimitedBudget(boolean explicit) {
+        try (var context = new org.springframework.context.annotation.AnnotationConfigApplicationContext()) {
+            if (explicit) {
+                context.getEnvironment().getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource(
+                        "测试限流配置", java.util.Map.of("app.llm.rate-limit.monthly-token-budget", "0")));
+            }
+            context.registerBean(StringRedisTemplate.class, () -> redis);
+            context.register(TokenRateLimiter.class);
+            context.refresh();
+            var actual = context.getBean(TokenRateLimiter.class);
+            assertThat(actual.monthlyTokenBudget()).isZero();
+            assertThat(actual.qpsLimit()).isEqualTo(5);
+            assertThat(actual.concurrentLimit()).isEqualTo(3);
+        }
+    }
 }

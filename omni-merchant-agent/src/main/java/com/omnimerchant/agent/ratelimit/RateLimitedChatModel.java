@@ -34,7 +34,7 @@ import java.util.UUID;
 @Slf4j
 public class RateLimitedChatModel implements ChatModel {
 
-    /** 预算预留估算值：仅用于预算预占，不代表真实用量。 */
+    /** 准入估算值：只参与预算检查，不代表真实用量，也不会写入累计用量。 */
     public static final int DEFAULT_ESTIMATED_TOKENS = 1000;
 
     private final ChatModel delegate;

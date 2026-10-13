@@ -13,12 +13,13 @@
 --
 -- ARGV[1]: QPS 上限（<=0 表示不限）
 -- ARGV[2]: 月度 Token 预算（<=0 表示不限）
--- ARGV[3]: 本次预计消耗 Token（预算预留）
+-- ARGV[3]: 本次预计消耗 Token（只检查，不写入真实累计用量）
 -- ARGV[4]: 并发上限（<=0 表示不限）
 -- ARGV[5]: QPS 窗口 TTL（秒）
 -- ARGV[6]: 预算 key TTL（秒）
 -- ARGV[7]: 本次并发租约 token（唯一）
 -- ARGV[8]: 并发租约 TTL（毫秒）
+-- ARGV[9]: 当前时间戳（毫秒）
 --
 -- 返回: {allowed(1|0), reject_reason}
 --   reject_reason ∈ OK / QPS_LIMITED / BUDGET_EXCEEDED / CONCURRENT_LIMITED
@@ -57,7 +58,7 @@ if qps_limit > 0 then
     end
 end
 
--- 第 2 层：月度 Token 预算（预留估算值；未通过时不得占用并发额度）
+-- 第 2 层：月度 Token 预算（累计真实用量加本次估算；未通过时不得占用并发额度）
 if monthly_budget > 0 then
     local usage = redis.call('GET', budget_key)
     local used = usage and tonumber(usage) or 0

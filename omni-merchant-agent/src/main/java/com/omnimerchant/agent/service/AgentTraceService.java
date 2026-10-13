@@ -12,6 +12,7 @@ import com.omnimerchant.agent.entity.ToolCallLog;
 import com.omnimerchant.agent.mapper.AgentRunMapper;
 import com.omnimerchant.agent.mapper.AgentStepMapper;
 import com.omnimerchant.agent.mapper.ToolCallLogMapper;
+import com.omnimerchant.agent.service.IntentClassificationService.IntentClassificationResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -130,6 +131,28 @@ public class AgentTraceService {
         } catch (Exception e) {
             log.warn("轨迹步骤写入失败（不影响业务）：traceId={}, type={}, error={}",
                     traceId, stepType, e.getMessage());
+        }
+    }
+
+    /** 分类失败类别由分类服务明确提供，不依赖中文摘要猜测，且不伪造工具步骤。 */
+    @Transactional
+    public void recordIntentClassification(String traceId, String userMessage,
+                                            IntentClassificationResult classification) {
+        try {
+            var run = findRunForUpdate(traceId);
+            if (run == null) {
+                return;
+            }
+            var metadata = new java.util.HashMap<String, Object>();
+            metadata.put("intent", classification.intent());
+            metadata.put("provider", classification.modelProvider());
+            metadata.put("model", classification.modelName());
+            metadata.put("failureCategory", classification.failureCategory());
+            addStepInternal(traceId, run, "INTENT_CLASSIFICATION", "classify_intent",
+                    classification.status(), userMessage, classification.reason(), null,
+                    classification.latencyMs(), classification.failureCategory(), metadata);
+        } catch (Exception e) {
+            log.warn("分类轨迹写入失败：traceId={}, errorType={}", traceId, e.getClass().getSimpleName());
         }
     }
 

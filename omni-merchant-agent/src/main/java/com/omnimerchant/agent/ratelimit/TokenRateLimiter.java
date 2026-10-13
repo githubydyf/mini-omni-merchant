@@ -22,7 +22,7 @@ import java.util.UUID;
  * <p>复现自参考项目 {@code ratelimit/TokenRateLimiter}，三层含义：
  * <ol>
  *   <li><b>QPS</b> —— 单位时间请求数（固定窗口，语义见 Lua 注释）；</li>
- *   <li><b>月度 Token 预算</b> —— 预留估算值，调用后按真实用量结算；</li>
+ *   <li><b>月度 Token 预算</b> —— 按累计真实用量与本次预估做准入检查，调用后记录真实用量；</li>
  *   <li><b>并发模型调用数</b> —— 同租户同时进行的模型调用上限。</li>
  * </ol>
  *
@@ -50,7 +50,7 @@ public class TokenRateLimiter {
 
     @Value("${app.llm.rate-limit.qps-limit:5}")
     private int qpsLimit;
-    @Value("${app.llm.rate-limit.monthly-token-budget:100000}")
+    @Value("${app.llm.rate-limit.monthly-token-budget:0}")
     private long monthlyTokenBudget;
     @Value("${app.llm.rate-limit.concurrent-limit:3}")
     private int concurrentLimit;
@@ -72,13 +72,15 @@ public class TokenRateLimiter {
         var luaSource = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         script = new DefaultRedisScript<>(luaSource, List.class);
         log.info("限流 Lua 脚本已加载（{} 字节）", luaSource.length());
+        log.info("模型限流配置：qpsLimit={}, monthlyTokenBudget={}, concurrentLimit={}, luaSha1={}",
+                qpsLimit, monthlyTokenBudget, concurrentLimit, script.getSha1());
     }
 
     /**
      * 准入检查：三层原子判定并占用资源。
      *
      * @param tenantId        必须来自经过验证的会话租户（不得用 conversationUuid 代替）
-     * @param estimatedTokens 本次预计消耗 Token（用于预算预留；真实用量由调用方结算）
+     * @param estimatedTokens 本次预计消耗 Token（只参与准入检查，不计为真实累计用量）
      * @param leaseToken      并发租约 token（唯一）；为空时自动生成
      * @return 允许 / 拒绝（带明确原因）
      */
@@ -116,13 +118,14 @@ public class TokenRateLimiter {
             var allowed = ((Number) result.get(0)).longValue() == 1L;
             if (!allowed) {
                 var reason = result.size() > 1 ? String.valueOf(result.get(1)) : "UNKNOWN";
-                log.warn("限流拒绝：tenant={}, reason={}", tenantId, reason);
+                log.warn("限流拒绝：tenantId={}, reason={}, monthlyTokenBudget={}, estimatedTokens={}, budgetMonth={}",
+                        tenantId, reason, monthlyTokenBudget, estimatedTokens, LocalDate.now().format(YM_FMT));
                 return RateLimitResult.reject(reason);
             }
             return RateLimitResult.ok();
         } catch (Exception e) {
             // fail-closed：保护不可用时拒绝，而不是放行
-            log.error("限流检查失败，拒绝本次请求：tenant={}, error={}", tenantId, e.getMessage());
+            log.error("限流检查失败，拒绝本次请求：tenantId={}, errorType={}", tenantId, e.getClass().getSimpleName());
             return RateLimitResult.reject("RATE_LIMITER_UNAVAILABLE");
         }
     }
@@ -135,7 +138,7 @@ public class TokenRateLimiter {
     /**
      * 结算真实 Token 用量。
      *
-     * <p>只应在拿到模型真实 Usage 时调用；拿不到真实用量时调用方应保留预留值，
+     * <p>只应在拿到模型真实 Usage 时调用；拿不到真实用量时不增加累计值，
      * 不得用固定估值冒充真实消耗。
      */
     public void recordTokenUsage(Long tenantId, long tokens) {
