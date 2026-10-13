@@ -295,6 +295,15 @@ public class AgentExecutionGuardService {
             return delegate.call(toolInput, toolContext);
         }
 
+        // 分类只决定路由。审批申请还必须匹配服务端传入的本轮明确操作要求。
+        if (!"escalateToHuman".equals(toolName)
+                && !isExplicitActionRequest(asString(context.get("intent")),
+                        asString(context.get("userMessage")), toolName)) {
+            GuardOutcomeHolder.mark("ACTION_NOT_AUTHORIZED", toolName);
+            return blockedPayload(toolName, "ACTION_NOT_AUTHORIZED",
+                    "本轮尚未明确要求提交该申请，本次未执行操作，请说明需要办理的事项。");
+        }
+
         // 4. 副作用工具：锁必须仍然有效
         var lease = asLease(context.get("conversationLease"));
         if (lease != null && !lease.isValid()) {
@@ -322,6 +331,34 @@ public class AgentExecutionGuardService {
             updateGuard(tenantId, conversationUuid, guardKey, "FAILED");
             throw e;
         }
+    }
+
+    /**
+     * 中文买家操作的保守校验，只接受本轮明确申请。
+     * 资格、政策、假设、否定、引用和权限攻击均要求澄清；历史及模型参数不能补齐授权。
+     */
+    private boolean isExplicitActionRequest(String intent, String message, String toolName) {
+        if (message == null || message.isBlank() || intent == null) {
+            return false;
+        }
+        if (java.util.regex.Pattern.compile(
+                "[?？吗么]|能否|是否|可以|能不能|怎么|如何|条件|政策|期限|多久|了解|知道|咨询|不要|不想|不需要|取消申请|"
+                        + "忽略|全部工具|所有规则|示例|比如|例如|假如|如果|假设|[“”\\\"]")
+                .matcher(message).find()) {
+            return false;
+        }
+        boolean explicit = java.util.regex.Pattern.compile("帮我|请|我要|我想|麻烦|给我|替我|把|申请|提交|修改|改一下|改成")
+                .matcher(message).find();
+        if (!explicit) {
+            return false;
+        }
+        return switch (toolName) {
+            case "createReturnRequest" -> "RETURN_REFUND".equals(intent) && message.contains("退货");
+            case "requestRefundOrReplacement" -> "RETURN_REFUND".equals(intent)
+                    && java.util.regex.Pattern.compile("退款|换货|补发").matcher(message).find();
+            case "requestAddressChange" -> "ADDRESS_CHANGE".equals(intent) && message.contains("地址");
+            default -> false;
+        };
     }
 
     /**

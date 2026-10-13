@@ -30,16 +30,6 @@
           </div>
         </div>
         <div class="composer">
-          <div class="topic-row">
-            <span class="topic-label">咨询类型</span>
-            <a-select
-              v-model:value="intent"
-              class="topic-select"
-              size="small"
-              :options="intentOptions"
-              :disabled="streaming"
-            />
-          </div>
           <a-input-search
             v-model:value="input"
             enter-button="发送"
@@ -61,21 +51,6 @@ import { consumeSse } from '@/utils/sse'
 import { renderSafeMarkdown } from '@/utils/markdown'
 import type { WidgetSession } from '@/types/contracts'
 
-/**
- * 咨询类型：仅提供只读类咨询分类，买家主动选择后作为 intent 提交。
- * 退款/退货/改址/取消等副作用业务仍需真实身份核验与人工审批，
- * 这里不提供入口，也不因买家选择而放开副作用工具。
- */
-const INTENT_OPTIONS = [
-  { value: 'GENERAL', label: '综合咨询' },
-  { value: 'POLICY_QA', label: '退换 / 政策' },
-  { value: 'ORDER_STATUS', label: '订单状态' },
-  { value: 'LOGISTICS', label: '物流进度' },
-  { value: 'PRODUCT_ADVICE', label: '商品咨询' },
-  { value: 'HUMAN_REQUEST', label: '转人工客服' },
-]
-const intentOptions = INTENT_OPTIONS
-
 const tenantCode = ref('')
 const customerEmail = ref('')
 const customerName = ref('')
@@ -86,7 +61,6 @@ const starting = ref(false)
 const streaming = ref(false)
 const input = ref('')
 const streamText = ref('')
-const intent = ref('GENERAL')
 const messages = ref<{ role: string; text: string }[]>([])
 const messagesEl = ref<HTMLElement>()
 
@@ -166,7 +140,6 @@ async function send(text?: string) {
         tenantCode: tenantCode.value.trim(),
         conversationUuid: session.value.conversationUuid,
         message: userText,
-        intent: intent.value || 'GENERAL',
       }),
     })
     if (!resp.ok) throw new Error(formatWidgetError(resp.status, (await readJson(resp)).message))
@@ -342,22 +315,6 @@ function formatFetchError(error: unknown, fallback: string) {
 .composer {
   border-top: 1px solid #eef0f3;
   padding: 12px 14px 14px;
-}
-
-.topic-row {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.topic-label {
-  color: #8c98a8;
-  font-size: 12px;
-}
-
-.topic-select {
-  width: 160px;
 }
 
 @media (max-width: 640px) {

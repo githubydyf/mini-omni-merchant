@@ -77,7 +77,7 @@ app:
       qps-limit: 5
       qps-window-seconds: 1
       # 第二层：月度 Token 预算（0 = 不限）。
-      monthly-token-budget: 100000
+      monthly-token-budget: 1000000000
       # 第三层：同租户并发模型调用上限。
       concurrent-limit: 3
       # 并发租约有效期（秒）：进程崩溃后靠它自动回收，避免计数永久残留。

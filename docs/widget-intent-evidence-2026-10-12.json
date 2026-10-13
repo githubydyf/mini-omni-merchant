@@ -1,0 +1,508 @@
+[
+  {
+    "scene": "商品推荐",
+    "conversationUuid": "47df1700-684e-4fe5-96b3-6d6e3d6495b6",
+    "model": "deepseek-flash",
+    "intent": "PRODUCT_ADVICE",
+    "status": "SUCCESS",
+    "traceId": "35ea19a804204cb7993799dfc796ce75",
+    "steps": [
+      {
+        "name": "classify_intent",
+        "type": "INTENT_CLASSIFICATION",
+        "output": "用户请求推荐蓝牙耳机，属于商品推荐咨询。",
+        "status": "SUCCESS",
+        "metadata": "{\"intent\":\"PRODUCT_ADVICE\",\"provider\":\"deepseek\",\"model\":\"deepseek-flash\"}",
+        "latencyMs": 13482
+      },
+      {
+        "name": "supervisor_worker_plan",
+        "type": "ROUTER",
+        "output": "product",
+        "status": "SUCCESS",
+        "metadata": "{\"requiresApproval\":false,\"requiresIdentityVerification\":false,\"recommendHumanHandoff\":false,\"riskLevel\":\"LOW\",\"toolAllowlist\":[\"searchProductCatalog\"],\"specialist\":\"product\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "AI_WORKING",
+        "type": "STATE",
+        "output": "AI_WORKING",
+        "status": "SUCCESS",
+        "metadata": "{\"specialist\":\"product\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "load_recent_messages",
+        "type": "MEMORY",
+        "output": "historyCount=1",
+        "status": "SUCCESS",
+        "metadata": "{\"conversationUuid\":\"47df1700-684e-4fe5-96b3-6d6e3d6495b6\",\"historyCount\":1}",
+        "latencyMs": 13
+      },
+      {
+        "name": "searchProductCatalog",
+        "type": "TOOL",
+        "output": "{\"status\":\"OK\",\"products\":[{\"productId\":3101,\"title\":\"主动降噪蓝牙耳机\",\"sku\":\"ZX-EAR-ANC-001\",\"currency\":\"CNY\",\"price\":[phone],\"stockStatus\":\"in_stock\",\"stock\":200,\"imageUrl\":null,\"reason\":\"主动降噪蓝牙耳机，40 小时续航，蓝牙 5.3。\"}],\"message\":\"商品数据来自本租户商品目录缓存。\"}",
+        "status": "SUCCESS",
+        "metadata": "{\"errorCode\":\"\"}",
+        "latencyMs": 23
+      },
+      {
+        "name": "assistant_response",
+        "type": "FINAL_ANSWER",
+        "output": "根据商品目录，为您推荐这一款：\n\n**主动降噪蓝牙耳机**\n- 价格：¥499\n- 核心卖点：主动降噪，40 小时续航，蓝牙 5.3\n- 库存：现货充足（200 件）\n- SKU：ZX-EAR-ANC-001\n\n这款适合日常通勤、办公和长时间使用，降噪加长续航体验比较均衡。\n\n如果您有具体需求（比如预算范围、是否要入耳式/头戴式、主要用来通话还是听歌），告诉我，我可以再帮您对比筛选~",
+        "status": "SUCCESS",
+        "metadata": "{}",
+        "latencyMs": 3060
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "推荐一款蓝牙耳机"
+      },
+      {
+        "role": "assistant",
+        "content": "根据商品目录，为您推荐这一款：\n\n**主动降噪蓝牙耳机**\n- 价格：¥499\n- 核心卖点：主动降噪，40 小时续航，蓝牙 5.3\n- 库存：现货充足（200 件）\n- SKU：ZX-EAR-ANC-001\n\n这款适合日常通勤、办公和长时间使用，降噪加长续航体验比较均衡。\n\n如果您有具体需求（比如预算范围、是否要入耳式/头戴式、主要用来通话还是听歌），告诉我，我可以再帮您对比筛选~"
+      }
+    ],
+    "returnRequestDelta": 0,
+    "sse": "event:status\ndata:PROCESSING\n\nevent:translated_delta\ndata:根据\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:目录\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:为您\n\nevent:translated_delta\ndata:推荐\n\nevent:translated_delta\ndata:这一\n\nevent:translated_delta\ndata:款\n\nevent:translated_delta\ndata:：\ndata:\ndata:\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:主动\n\nevent:translated_delta\ndata:降\n\nevent:translated_delta\ndata:噪\n\nevent:translated_delta\ndata:蓝牙\n\nevent:translated_delta\ndata:耳机\n\nevent:translated_delta\ndata:**\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:价格\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:¥\n\nevent:translated_delta\ndata:499\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:核心\n\nevent:translated_delta\ndata:卖\n\nevent:translated_delta\ndata:点\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:主动\n\nevent:translated_delta\ndata:降\n\nevent:translated_delta\ndata:噪\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:40\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:小时\n\nevent:translated_delta\ndata:续航\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:蓝牙\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:5\n\nevent:translated_delta\ndata:.\n\nevent:translated_delta\ndata:3\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:库存\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:现货\n\nevent:translated_delta\ndata:充足\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:200\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:件\n\nevent:translated_delta\ndata:）\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: SK\n\nevent:translated_delta\ndata:U\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:ZX\n\nevent:translated_delta\ndata:-E\n\nevent:translated_delta\ndata:AR\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata:ANC\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata:001\n\nevent:translated_delta\ndata:\ndata:\ndata:\n\nevent:translated_delta\ndata:这款\n\nevent:translated_delta\ndata:适合\n\nevent:translated_delta\ndata:日常\n\nevent:translated_delta\ndata:通\n\nevent:translated_delta\ndata:勤\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:办公\n\nevent:translated_delta\ndata:和\n\nevent:translated_delta\ndata:长时间\n\nevent:translated_delta\ndata:使用\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:降\n\nevent:translated_delta\ndata:噪\n\nevent:translated_delta\ndata:加\n\nevent:translated_delta\ndata:长\n\nevent:translated_delta\ndata:续航\n\nevent:translated_delta\ndata:体验\n\nevent:translated_delta\ndata:比较\n\nevent:translated_delta\ndata:均衡\n\nevent:translated_delta\ndata:。\ndata:\ndata:\n\nevent:translated_delta\ndata:如果您\n\nevent:translated_delta\ndata:有\n\nevent:translated_delta\ndata:具体\n\nevent:translated_delta\ndata:需求\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:比如\n\nevent:translated_delta\ndata:预算\n\nevent:translated_delta\ndata:范围\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:是否\n\nevent:translated_delta\ndata:要\n\nevent:translated_delta\ndata:入\n\nevent:translated_delta\ndata:耳\n\nevent:translated_delta\ndata:式\n\nevent:translated_delta\ndata:/\n\nevent:translated_delta\ndata:头\n\nevent:translated_delta\ndata:戴\n\nevent:translated_delta\ndata:式\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:主要\n\nevent:translated_delta\ndata:用来\n\nevent:translated_delta\ndata:通话\n\nevent:translated_delta\ndata:还是\n\nevent:translated_delta\ndata:听\n\nevent:translated_delta\ndata:歌\n\nevent:translated_delta\ndata:），\n\nevent:translated_delta\ndata:告诉我\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:我可以\n\nevent:translated_delta\ndata:再\n\nevent:translated_delta\ndata:帮\n\nevent:translated_delta\ndata:您\n\nevent:translated_delta\ndata:对比\n\nevent:translated_delta\ndata:筛选\n\nevent:translated_delta\ndata:~\n\nevent:final\ndata:根据商品目录，为您推荐这一款：\ndata:\ndata:**主动降噪蓝牙耳机**\ndata:- 价格：¥499\ndata:- 核心卖点：主动降噪，40 小时续航，蓝牙 5.3\ndata:- 库存：现货充足（200 件）\ndata:- SKU：ZX-EAR-ANC-001\ndata:\ndata:这款适合日常通勤、办公和长时间使用，降噪加长续航体验比较均衡。\ndata:\ndata:如果您有具体需求（比如预算范围、是否要入耳式/头戴式、主要用来通话还是听歌），告诉我，我可以再帮您对比筛选~\n\n"
+  },
+  {
+    "scene": "订单查询",
+    "conversationUuid": "673df4ad-bdda-4c7d-9936-1e12d0829b8b",
+    "model": "deepseek-flash",
+    "intent": "ORDER_STATUS",
+    "status": "SUCCESS",
+    "traceId": "5b4ffb02a6354a1da72584a374a607be",
+    "steps": [
+      {
+        "name": "classify_intent",
+        "type": "INTENT_CLASSIFICATION",
+        "output": "用户询问订单 #2002 是否已发货，属于查询订单发货状态。",
+        "status": "SUCCESS",
+        "metadata": "{\"intent\":\"ORDER_STATUS\",\"provider\":\"deepseek\",\"model\":\"deepseek-flash\"}",
+        "latencyMs": 1213
+      },
+      {
+        "name": "supervisor_worker_plan",
+        "type": "ROUTER",
+        "output": "order",
+        "status": "SUCCESS",
+        "metadata": "{\"requiresApproval\":false,\"requiresIdentityVerification\":true,\"recommendHumanHandoff\":false,\"riskLevel\":\"MEDIUM\",\"toolAllowlist\":[\"queryOrder\"],\"specialist\":\"order\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "AI_WORKING",
+        "type": "STATE",
+        "output": "AI_WORKING",
+        "status": "SUCCESS",
+        "metadata": "{\"specialist\":\"order\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "load_recent_messages",
+        "type": "MEMORY",
+        "output": "historyCount=1",
+        "status": "SUCCESS",
+        "metadata": "{\"conversationUuid\":\"673df4ad-bdda-4c7d-9936-1e12d0829b8b\",\"historyCount\":1}",
+        "latencyMs": 8
+      },
+      {
+        "name": "queryOrder",
+        "type": "TOOL",
+        "output": "{\"orderId\":\"#2002\",\"status\":\"shipped\",\"verified\":true,\"items\":[{\"sku\":\"ZX-KB-87-001\",\"price\":399,\"title\":\"机械键盘 87 键\",\"quantity\":1,\"image_url\":null}],\"totalAmount\":\"[phone]\",\"currency\":\"CNY\",\"trackingNumber\":\"SF[phone]\",\"trackingCarrier\":\"顺丰速运\",\"trackingStatus\":\"out_for_delivery\",\"shippingAddress\":\"{\\\"zip\\\": \\\"210000\\\", \\\"city\\\": \\\"南京市\\\", \\\"state\\\": \\\"江苏省\\\", \\\"street\\\": \\\"鼓楼区示例路 12 号\\\", \\\"country\\\": \\\"CN\\\"}\",\"message\":\"Verified order details from the tenant order cache.\"}",
+        "status": "SUCCESS",
+        "metadata": "{\"errorCode\":\"\"}",
+        "latencyMs": 12
+      },
+      {
+        "name": "assistant_response",
+        "type": "FINAL_ANSWER",
+        "output": "您好，已为您查询到订单 #2002 的信息：\n\n- **订单状态**：已发货\n- **商品**：机械键盘 87 键 × 1\n- **订单金额**：CNY 399.00\n- **物流公司**：顺丰速运\n- **物流单号**：SF[phone]\n- **物流状态**：派送中，请留意快递员的电话或短信\n- **收货地址**：江苏省南京市鼓楼区示例路 12 号\n\n您的订单已经发出，目前正在派送途中。如需进一步帮助，请随时告诉我。",
+        "status": "SUCCESS",
+        "metadata": "{}",
+        "latencyMs": 2873
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "我的订单 #2002 发货了吗？下单邮箱是 zhoutao@example.com"
+      },
+      {
+        "role": "assistant",
+        "content": "您好，已为您查询到订单 #2002 的信息：\n\n- **订单状态**：已发货\n- **商品**：机械键盘 87 键 × 1\n- **订单金额**：CNY 399.00\n- **物流公司**：顺丰速运\n- **物流单号**：SF2000000002\n- **物流状态**：派送中，请留意快递员的电话或短信\n- **收货地址**：江苏省南京市鼓楼区示例路 12 号\n\n您的订单已经发出，目前正在派送途中。如需进一步帮助，请随时告诉我。"
+      }
+    ],
+    "returnRequestDelta": 0,
+    "sse": "event:status\ndata:PROCESSING\n\nevent:translated_delta\ndata:您好\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:已\n\nevent:translated_delta\ndata:为您\n\nevent:translated_delta\ndata:查询\n\nevent:translated_delta\ndata:到\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata: #\n\nevent:translated_delta\ndata:200\n\nevent:translated_delta\ndata:2\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:的信息\n\nevent:translated_delta\ndata:：\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:状态\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:已\n\nevent:translated_delta\ndata:发货\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:机械\n\nevent:translated_delta\ndata:键盘\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:87\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:键\n\nevent:translated_delta\ndata: ×\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:1\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:金额\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:CN\n\nevent:translated_delta\ndata:Y\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:399\n\nevent:translated_delta\ndata:.\n\nevent:translated_delta\ndata:00\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:物流\n\nevent:translated_delta\ndata:公司\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:顺\n\nevent:translated_delta\ndata:丰\n\nevent:translated_delta\ndata:速\n\nevent:translated_delta\ndata:运\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:物流\n\nevent:translated_delta\ndata:单\n\nevent:translated_delta\ndata:号\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:SF\n\nevent:translated_delta\ndata:200\n\nevent:translated_delta\ndata:000\n\nevent:translated_delta\ndata:000\n\nevent:translated_delta\ndata:2\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:物流\n\nevent:translated_delta\ndata:状态\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:派\n\nevent:translated_delta\ndata:送\n\nevent:translated_delta\ndata:中\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:请\n\nevent:translated_delta\ndata:留意\n\nevent:translated_delta\ndata:快递\n\nevent:translated_delta\ndata:员的\n\nevent:translated_delta\ndata:电话\n\nevent:translated_delta\ndata:或\n\nevent:translated_delta\ndata:短信\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:收货\n\nevent:translated_delta\ndata:地址\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:江苏省\n\nevent:translated_delta\ndata:南京市\n\nevent:translated_delta\ndata:鼓\n\nevent:translated_delta\ndata:楼\n\nevent:translated_delta\ndata:区\n\nevent:translated_delta\ndata:示例\n\nevent:translated_delta\ndata:路\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:12\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:号\n\nevent:translated_delta\ndata:\ndata:\ndata:\n\nevent:translated_delta\ndata:您的\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:已经\n\nevent:translated_delta\ndata:发出\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:目前\n\nevent:translated_delta\ndata:正在\n\nevent:translated_delta\ndata:派\n\nevent:translated_delta\ndata:送\n\nevent:translated_delta\ndata:途中\n\nevent:translated_delta\ndata:。\n\nevent:translated_delta\ndata:如需\n\nevent:translated_delta\ndata:进一步\n\nevent:translated_delta\ndata:帮助\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:请\n\nevent:translated_delta\ndata:随时\n\nevent:translated_delta\ndata:告诉我\n\nevent:translated_delta\ndata:。\n\nevent:final\ndata:您好，已为您查询到订单 #2002 的信息：\ndata:\ndata:- **订单状态**：已发货\ndata:- **商品**：机械键盘 87 键 × 1\ndata:- **订单金额**：CNY 399.00\ndata:- **物流公司**：顺丰速运\ndata:- **物流单号**：SF2000000002\ndata:- **物流状态**：派送中，请留意快递员的电话或短信\ndata:- **收货地址**：江苏省南京市鼓楼区示例路 12 号\ndata:\ndata:您的订单已经发出，目前正在派送途中。如需进一步帮助，请随时告诉我。\n\n"
+  },
+  {
+    "scene": "物流追问",
+    "conversationUuid": "673df4ad-bdda-4c7d-9936-1e12d0829b8b",
+    "model": "deepseek-flash",
+    "intent": "LOGISTICS",
+    "status": "SUCCESS",
+    "traceId": "a9a9888f644041e0b3092fc65c8f5fea",
+    "steps": [
+      {
+        "name": "classify_intent",
+        "type": "INTENT_CLASSIFICATION",
+        "output": "用户追问“它现在到哪里了”，承接上文订单物流信息，属于查询快递轨迹和包裹位置。",
+        "status": "SUCCESS",
+        "metadata": "{\"intent\":\"LOGISTICS\",\"provider\":\"deepseek\",\"model\":\"deepseek-flash\"}",
+        "latencyMs": 1158
+      },
+      {
+        "name": "supervisor_worker_plan",
+        "type": "ROUTER",
+        "output": "order",
+        "status": "SUCCESS",
+        "metadata": "{\"requiresApproval\":false,\"requiresIdentityVerification\":false,\"recommendHumanHandoff\":false,\"riskLevel\":\"MEDIUM\",\"toolAllowlist\":[\"queryOrder\",\"trackLogistics\"],\"specialist\":\"order\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "AI_WORKING",
+        "type": "STATE",
+        "output": "AI_WORKING",
+        "status": "SUCCESS",
+        "metadata": "{\"specialist\":\"order\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "load_recent_messages",
+        "type": "MEMORY",
+        "output": "historyCount=3",
+        "status": "SUCCESS",
+        "metadata": "{\"conversationUuid\":\"673df4ad-bdda-4c7d-9936-1e12d0829b8b\",\"historyCount\":3}",
+        "latencyMs": 7
+      },
+      {
+        "name": "trackLogistics",
+        "type": "TOOL",
+        "output": "{\"trackingNumber\":\"SF[phone]\",\"status\":\"out_for_delivery\",\"estimatedDelivery\":null,\"checkpoints\":[{\"desc\":\"派送中\",\"time\":\"[phone]:00:00\",\"status\":\"out_for_delivery\",\"location\":\"南京市\"}],\"message\":\"Shipment data comes from the tenant order cache.\"}",
+        "status": "SUCCESS",
+        "metadata": "{\"errorCode\":\"\"}",
+        "latencyMs": 4
+      },
+      {
+        "name": "queryOrder",
+        "type": "TOOL",
+        "output": "{\"orderId\":\"#2002\",\"status\":\"shipped\",\"verified\":true,\"items\":[{\"sku\":\"ZX-KB-87-001\",\"price\":399,\"title\":\"机械键盘 87 键\",\"quantity\":1,\"image_url\":null}],\"totalAmount\":\"[phone]\",\"currency\":\"CNY\",\"trackingNumber\":\"SF[phone]\",\"trackingCarrier\":\"顺丰速运\",\"trackingStatus\":\"out_for_delivery\",\"shippingAddress\":\"{\\\"zip\\\": \\\"210000\\\", \\\"city\\\": \\\"南京市\\\", \\\"state\\\": \\\"江苏省\\\", \\\"street\\\": \\\"鼓楼区示例路 12 号\\\", \\\"country\\\": \\\"CN\\\"}\",\"message\":\"Verified order details from the tenant order cache.\"}",
+        "status": "SUCCESS",
+        "metadata": "{\"errorCode\":\"\"}",
+        "latencyMs": 3
+      },
+      {
+        "name": "assistant_response",
+        "type": "FINAL_ANSWER",
+        "output": "为您查询了物流单号 SF[phone] 的最新轨迹：\n\n- **当前状态**：派送中（out_for_delivery）\n- **当前位置**：南京市\n- **最新节点**：[phone]:00:00 派送中\n- **预计送达时间**：暂未提供\n\n包裹目前已在南京市，处于派送中状态，正在送往收货地址（江苏省南京市鼓楼区示例路 12 号）的途中。建议您保持电话畅通，留意快递员的联系。如需进一步帮助，请随时告诉我。",
+        "status": "SUCCESS",
+        "metadata": "{}",
+        "latencyMs": 3351
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "那它现在到哪里了？"
+      },
+      {
+        "role": "assistant",
+        "content": "为您查询了物流单号 SF2000000002 的最新轨迹：\n\n- **当前状态**：派送中（out_for_delivery）\n- **当前位置**：南京市\n- **最新节点**：2026-10-10 08:00:00 派送中\n- **预计送达时间**：暂未提供\n\n包裹目前已在南京市，处于派送中状态，正在送往收货地址（江苏省南京市鼓楼区示例路 12 号）的途中。建议您保持电话畅通，留意快递员的联系。如需进一步帮助，请随时告诉我。"
+      }
+    ],
+    "returnRequestDelta": 0,
+    "sse": "event:status\ndata:PROCESSING\n\nevent:translated_delta\ndata:为您\n\nevent:translated_delta\ndata:查询\n\nevent:translated_delta\ndata:了\n\nevent:translated_delta\ndata:物流\n\nevent:translated_delta\ndata:单\n\nevent:translated_delta\ndata:号\n\nevent:translated_delta\ndata: SF\n\nevent:translated_delta\ndata:200\n\nevent:translated_delta\ndata:000\n\nevent:translated_delta\ndata:000\n\nevent:translated_delta\ndata:2\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:的最新\n\nevent:translated_delta\ndata:轨迹\n\nevent:translated_delta\ndata:：\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:当前\n\nevent:translated_delta\ndata:状态\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:派\n\nevent:translated_delta\ndata:送\n\nevent:translated_delta\ndata:中\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:out\n\nevent:translated_delta\ndata:_for\n\nevent:translated_delta\ndata:_d\n\nevent:translated_delta\ndata:el\n\nevent:translated_delta\ndata:ivery\n\nevent:translated_delta\ndata:）\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:当前位置\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:南京市\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:最新\n\nevent:translated_delta\ndata:节点\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:202\n\nevent:translated_delta\ndata:6\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata:10\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata:10\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:08\n\nevent:translated_delta\ndata::\n\nevent:translated_delta\ndata:00\n\nevent:translated_delta\ndata::\n\nevent:translated_delta\ndata:00\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:派\n\nevent:translated_delta\ndata:送\n\nevent:translated_delta\ndata:中\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:预计\n\nevent:translated_delta\ndata:送达\n\nevent:translated_delta\ndata:时间\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:暂\n\nevent:translated_delta\ndata:未\n\nevent:translated_delta\ndata:提供\n\nevent:translated_delta\ndata:\ndata:\ndata:\n\nevent:translated_delta\ndata:包裹\n\nevent:translated_delta\ndata:目前\n\nevent:translated_delta\ndata:已在\n\nevent:translated_delta\ndata:南京市\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:处于\n\nevent:translated_delta\ndata:派\n\nevent:translated_delta\ndata:送\n\nevent:translated_delta\ndata:中\n\nevent:translated_delta\ndata:状态\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:正在\n\nevent:translated_delta\ndata:送往\n\nevent:translated_delta\ndata:收货\n\nevent:translated_delta\ndata:地址\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:江苏省\n\nevent:translated_delta\ndata:南京市\n\nevent:translated_delta\ndata:鼓\n\nevent:translated_delta\ndata:楼\n\nevent:translated_delta\ndata:区\n\nevent:translated_delta\ndata:示例\n\nevent:translated_delta\ndata:路\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:12\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:号\n\nevent:translated_delta\ndata:）\n\nevent:translated_delta\ndata:的\n\nevent:translated_delta\ndata:途中\n\nevent:translated_delta\ndata:。\n\nevent:translated_delta\ndata:建议\n\nevent:translated_delta\ndata:您\n\nevent:translated_delta\ndata:保持\n\nevent:translated_delta\ndata:电话\n\nevent:translated_delta\ndata:畅通\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:留意\n\nevent:translated_delta\ndata:快递\n\nevent:translated_delta\ndata:员的\n\nevent:translated_delta\ndata:联系\n\nevent:translated_delta\ndata:。\n\nevent:translated_delta\ndata:如需\n\nevent:translated_delta\ndata:进一步\n\nevent:translated_delta\ndata:帮助\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:请\n\nevent:translated_delta\ndata:随时\n\nevent:translated_delta\ndata:告诉我\n\nevent:translated_delta\ndata:。\n\nevent:final\ndata:为您查询了物流单号 SF2000000002 的最新轨迹：\ndata:\ndata:- **当前状态**：派送中（out_for_delivery）\ndata:- **当前位置**：南京市\ndata:- **最新节点**：2026-10-10 08:00:00 派送中\ndata:- **预计送达时间**：暂未提供\ndata:\ndata:包裹目前已在南京市，处于派送中状态，正在送往收货地址（江苏省南京市鼓楼区示例路 12 号）的途中。建议您保持电话畅通，留意快递员的联系。如需进一步帮助，请随时告诉我。\n\n"
+  },
+  {
+    "scene": "退货政策",
+    "conversationUuid": "4429f0f4-2cf7-46ac-8b6b-aa6dfb486528",
+    "model": "deepseek-flash",
+    "intent": "POLICY_QA",
+    "status": "SUCCESS",
+    "traceId": "7f3ccadcc65540c8a85c1e5924d6e2f0",
+    "steps": [
+      {
+        "name": "classify_intent",
+        "type": "INTENT_CLASSIFICATION",
+        "output": "用户咨询退货期限，属于售后政策询问，未明确要求提交退货申请。",
+        "status": "SUCCESS",
+        "metadata": "{\"intent\":\"POLICY_QA\",\"provider\":\"deepseek\",\"model\":\"deepseek-flash\"}",
+        "latencyMs": 1073
+      },
+      {
+        "name": "refundPolicyRAG",
+        "type": "TOOL",
+        "output": "{\"context\":\"【来源 1】\\n文件：return-policy.txt\\n片段：1\\n内容：[RET-003] 退货申请不等于退货完成\\r\\n\\r\\n用户提交退货申请后，系统只创建退货申请记录。\\r\\n\\r\\n新创建的退货申请状态为 PENDING。\\r\\n\\r\\nPENDING 表示“等待审核”，不表示已经批准退货。\\r\\n\\r\\n只有后续业务审核通过后，申请状态才能进入 APPROVED 等后续状态。\\r\\n\\r\\n\\r\\n==================================================\\r\\n二、七天无理由退货\\r\\n==================================================\\r\\n\\r\\n[RET-101] 七天无理由退货基本规则\\r\\n\\r\\n符合无理由退货条件的普通实物商品，可以在规定期限内申请七天无理由退货。\\r\\n\\r\\n无理由退货不要求商品存在质量问题。\\r\\n\\r\\n无理由退货不是无条件退货。\\r\\n\\r\\n商品仍然必须满足退货期限、商品类别和商品完好等要求。\\r\\n\\r\\n\\r\\n[RET-102] 七天无理由退货起算时间\\r\\n\\r\\n七天无理由退货期限以商品实际签收时间为依据。\\r\\n\\r\\n签收当天不计入七天期限。\\r\\n\\r\\n从签收次日开始计算第1天。\\r\\n\\r\\n消费者应当在第7个自然日24:00之前提交退货申请。\\r\\n\\r\\n发货时间、下单时间和支付时间不是七天无理由退货的起算时间。\\r\\n\\r\\n\\r\\n[RET-103] 七天期限示例\\r\\n\\r\\n如果商品在9月1日签收：\\r\\n\\r\\n9月2日为第1天；\\r\\n9月3日为第2天；\\r\\n9月4日为第3天；\\r\\n9月5日为第4天；\\r\\n9月6日为第5天；\\r\\n9月7日为第6天；\\r\\n9月8日为第7天。\\r\\n\\r\\n消费者应在9月8日24:00之前提交无理由退货申请。\\r\\n\\r\\n\\r\\n[RET-104] 七天无理由退货必须同时满足的条件\\n\\n【来源 2】\\n文件：return-policy.txt\\n片段：9\\n内容：答：消费者原因的无理由退货由消费者承担合理退货运费；确认属于商品质量问题或商家责任时由商家承担。\\r\\n\\r\\n[RET-FAQ-007]\\r\\n问：申请退货以后就是退货成功了吗？\\r\\n答：不是。创建退货申请后状态为 PENDING，还需要经过后续审核、寄回和验收流程。\\r\\n\\r\\n[RET-FAQ-008]\\r\\n问：商品已经超过七天还能无理由退吗？\\r\\n答：不符合本平台七天无理由退货期限的，不再支持普通七天无理由退货；商品存在质量问题时可以按照质量问题售后规则处理。\\n\\n【来源 3】\\n文件：return-policy.txt\\n片段：2\\n内容：申请七天无理由退货，需要同时满足以下条件：\\r\\n\\r\\n1. 商品属于支持七天无理由退货的商品；\\r\\n2. 申请时间未超过退货期限；\\r\\n3. 商品保持完好；\\r\\n4. 商品没有因不合理使用而影响二次销售；\\r\\n5. 商品、主要配件和应退赠品齐全；\\r\\n6. 不属于平台明确规定的不可无理由退货商品。\\r\\n\\r\\n\\r\\n==================================================\\r\\n三、商品完好标准\\r\\n==================================================\\r\\n\\r\\n[RET-201] 商品完好基本定义\\r\\n\\r\\n商品完好是无理由退货的重要条件。\\r\\n\\r\\n商品完好是指商品仍保持原有品质和主要功能，没有因消费者不合理使用产生明显价值贬损。\\r\\n\\r\\n消费者为了检查商品外观、规格和基本功能进行合理查验，不当然视为商品不完好。\\r\\n\\r\\n\\r\\n[RET-202] 服饰鞋包商品完好标准\\r\\n\\r\\n服饰鞋包申请无理由退货时，应满足：\\r\\n\\r\\n吊牌完整；\\r\\n未洗涤；\\r\\n没有明显长期穿着痕迹；\\r\\n没有明显污渍；\\r\\n没有人为破损；\\r\\n鞋底没有明显使用磨损；\\r\\n主要配件和应退赠品齐全。\\r\\n\\r\\n正常试穿本身不当然导致商品失去退货资格。\\r\\n\\r\\n\\r\\n[RET-203] 数码电子商品完好标准\\r\\n\\r\\n数码电子商品申请无理由退货时，应保持主机和主要配件完整，并且不存在明显人为损坏。\\n\\n【来源 4】\\n文件：return-policy.txt\\n片段：8\\n内容：判断具体订单是否可以退货时，应综合：\\r\\n\\r\\n真实订单状态；\\r\\n真实签收时间；\\r\\n真实商品属性；\\r\\n商品是否 Final Sale；\\r\\n商品实际使用状态；\\r\\n当前日期；\\r\\n本退货政策。\\r\\n\\r\\n不能",
+        "status": "SUCCESS",
+        "metadata": "{\"source\":\"toolCallbackScope\"}",
+        "latencyMs": 1450
+      },
+      {
+        "name": "supervisor_worker_plan",
+        "type": "ROUTER",
+        "output": "policy_rag",
+        "status": "SUCCESS",
+        "metadata": "{\"requiresApproval\":false,\"requiresIdentityVerification\":false,\"recommendHumanHandoff\":false,\"riskLevel\":\"MEDIUM\",\"toolAllowlist\":[\"refundPolicyRAG\"],\"specialist\":\"policy_rag\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "AI_WORKING",
+        "type": "STATE",
+        "output": "AI_WORKING",
+        "status": "SUCCESS",
+        "metadata": "{\"specialist\":\"policy_rag\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "load_recent_messages",
+        "type": "MEMORY",
+        "output": "historyCount=1",
+        "status": "SUCCESS",
+        "metadata": "{\"conversationUuid\":\"4429f0f4-2cf7-46ac-8b6b-aa6dfb486528\",\"historyCount\":1}",
+        "latencyMs": 13
+      },
+      {
+        "name": "assistant_response",
+        "type": "FINAL_ANSWER",
+        "output": "关于退货期限，根据平台退货政策知识库（文件：return-policy.txt），主要规则如下：\n\n**七天无理由退货期限**\n- 符合无理由退货条件的普通实物商品，可在规定期限内申请七天无理由退货。\n- 期限以**商品实际签收时间**为依据：签收当天**不计入**，从签收**次日**开始算第1天，需要在**第7个自然日24:00之前**提交退货申请。\n- 举例：9月1日签收 → 9月2日为第1天 → 9月8日为第7天，应在9月8日24:00前提交申请。\n- 注意：发货时间、下单时间和支付时间**不是**起算时间。\n\n**几个重要提示**\n- 七天无理由退货**不是无条件退货**，还需同时满足：商品属于支持无理由退货的类别、申请时间未超期、商品保持完好、无不合理使用影响二次销售、商品及配件赠品齐全、不属于平台规定的不可无理由退货商品。\n- 超过七天期限的，不再支持普通七天无理由退货；但若存在质量问题，可按质量问题售后规则处理。\n- 最终判断还需结合您订单的真实签收时间、商品属性、是否 Final Sale 等实际情况。\n\n如果您方便提供具体订单号，我可以结合订单实际情况帮您进一步判断是否符合退货条件。",
+        "status": "SUCCESS",
+        "metadata": "{}",
+        "latencyMs": 5012
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "退货期限是多少天？"
+      },
+      {
+        "role": "assistant",
+        "content": "关于退货期限，根据平台退货政策知识库（文件：return-policy.txt），主要规则如下：\n\n**七天无理由退货期限**\n- 符合无理由退货条件的普通实物商品，可在规定期限内申请七天无理由退货。\n- 期限以**商品实际签收时间**为依据：签收当天**不计入**，从签收**次日**开始算第1天，需要在**第7个自然日24:00之前**提交退货申请。\n- 举例：9月1日签收 → 9月2日为第1天 → 9月8日为第7天，应在9月8日24:00前提交申请。\n- 注意：发货时间、下单时间和支付时间**不是**起算时间。\n\n**几个重要提示**\n- 七天无理由退货**不是无条件退货**，还需同时满足：商品属于支持无理由退货的类别、申请时间未超期、商品保持完好、无不合理使用影响二次销售、商品及配件赠品齐全、不属于平台规定的不可无理由退货商品。\n- 超过七天期限的，不再支持普通七天无理由退货；但若存在质量问题，可按质量问题售后规则处理。\n- 最终判断还需结合您订单的真实签收时间、商品属性、是否 Final Sale 等实际情况。\n\n如果您方便提供具体订单号，我可以结合订单实际情况帮您进一步判断是否符合退货条件。"
+      }
+    ],
+    "returnRequestDelta": 0,
+    "sse": "event:status\ndata:PROCESSING\n\nevent:translated_delta\ndata:关于\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:期限\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:根据\n\nevent:translated_delta\ndata:平台\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:政策\n\nevent:translated_delta\ndata:知识\n\nevent:translated_delta\ndata:库\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:文件\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:return\n\nevent:translated_delta\ndata:-p\n\nevent:translated_delta\ndata:olicy\n\nevent:translated_delta\ndata:.txt\n\nevent:translated_delta\ndata:），\n\nevent:translated_delta\ndata:主要\n\nevent:translated_delta\ndata:规则\n\nevent:translated_delta\ndata:如下\n\nevent:translated_delta\ndata:：\ndata:\ndata:\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:七天\n\nevent:translated_delta\ndata:无\n\nevent:translated_delta\ndata:理由\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:期限\n\nevent:translated_delta\ndata:**\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:符合\n\nevent:translated_delta\ndata:无\n\nevent:translated_delta\ndata:理由\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:条件的\n\nevent:translated_delta\ndata:普通\n\nevent:translated_delta\ndata:实物\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:可在\n\nevent:translated_delta\ndata:规定\n\nevent:translated_delta\ndata:期限内\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:七天\n\nevent:translated_delta\ndata:无\n\nevent:translated_delta\ndata:理由\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:。\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:期限\n\nevent:translated_delta\ndata:以\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:实际\n\nevent:translated_delta\ndata:签\n\nevent:translated_delta\ndata:收\n\nevent:translated_delta\ndata:时间\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:为依据\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:签\n\nevent:translated_delta\ndata:收\n\nevent:translated_delta\ndata:当天\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:不计\n\nevent:translated_delta\ndata:入\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:从\n\nevent:translated_delta\ndata:签\n\nevent:translated_delta\ndata:收\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:次日\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:开始\n\nevent:translated_delta\ndata:算\n\nevent:translated_delta\ndata:第\n\nevent:translated_delta\ndata:1\n\nevent:translated_delta\ndata:天\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:需要在\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:第\n\nevent:translated_delta\ndata:7\n\nevent:translated_delta\ndata:个\n\nevent:translated_delta\ndata:自然\n\nevent:translated_delta\ndata:日\n\nevent:translated_delta\ndata:24\n\nevent:translated_delta\ndata::\n\nevent:translated_delta\ndata:00\n\nevent:translated_delta\ndata:之前\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:提交\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:。\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:举例\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:9\n\nevent:translated_delta\ndata:月\n\nevent:translated_delta\ndata:1\n\nevent:translated_delta\ndata:日\n\nevent:translated_delta\ndata:签\n\nevent:translated_delta\ndata:收\n\nevent:translated_delta\ndata: →\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:9\n\nevent:translated_delta\ndata:月\n\nevent:translated_delta\ndata:2\n\nevent:translated_delta\ndata:日为\n\nevent:translated_delta\ndata:第\n\nevent:translated_delta\ndata:1\n\nevent:translated_delta\ndata:天\n\nevent:translated_delta\ndata: →\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:9\n\nevent:translated_delta\ndata:月\n\nevent:translated_delta\ndata:8\n\nevent:translated_delta\ndata:日为\n\nevent:translated_delta\ndata:第\n\nevent:translated_delta\ndata:7\n\nevent:translated_delta\ndata:天\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:应在\n\nevent:translated_delta\ndata:9\n\nevent:translated_delta\ndata:月\n\nevent:translated_delta\ndata:8\n\nevent:translated_delta\ndata:日\n\nevent:translated_delta\ndata:24\n\nevent:translated_delta\ndata::\n\nevent:translated_delta\ndata:00\n\nevent:translated_delta\ndata:前\n\nevent:translated_delta\ndata:提交\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:。\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:注意\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:发货\n\nevent:translated_delta\ndata:时间\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:下单\n\nevent:translated_delta\ndata:时间和\n\nevent:translated_delta\ndata:支付\n\nevent:translated_delta\ndata:时间\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:不是\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:起\n\nevent:translated_delta\ndata:算\n\nevent:translated_delta\ndata:时间\n\nevent:translated_delta\ndata:。\ndata:\ndata:\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:几个\n\nevent:translated_delta\ndata:重要\n\nevent:translated_delta\ndata:提示\n\nevent:translated_delta\ndata:**\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:七天\n\nevent:translated_delta\ndata:无\n\nevent:translated_delta\ndata:理由\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:不是\n\nevent:translated_delta\ndata:无条件\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:还需\n\nevent:translated_delta\ndata:同时\n\nevent:translated_delta\ndata:满足\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:属于\n\nevent:translated_delta\ndata:支持\n\nevent:translated_delta\ndata:无\n\nevent:translated_delta\ndata:理由\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:的\n\nevent:translated_delta\ndata:类别\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:时间\n\nevent:translated_delta\ndata:未\n\nevent:translated_delta\ndata:超\n\nevent:translated_delta\ndata:期\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:保持\n\nevent:translated_delta\ndata:完好\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:无不\n\nevent:translated_delta\ndata:合理\n\nevent:translated_delta\ndata:使用\n\nevent:translated_delta\ndata:影响\n\nevent:translated_delta\ndata:二次\n\nevent:translated_delta\ndata:销售\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:及\n\nevent:translated_delta\ndata:配件\n\nevent:translated_delta\ndata:赠\n\nevent:translated_delta\ndata:品\n\nevent:translated_delta\ndata:齐全\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:不属于\n\nevent:translated_delta\ndata:平台\n\nevent:translated_delta\ndata:规定的\n\nevent:translated_delta\ndata:不可\n\nevent:translated_delta\ndata:无\n\nevent:translated_delta\ndata:理由\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:。\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:超过\n\nevent:translated_delta\ndata:七天\n\nevent:translated_delta\ndata:期限\n\nevent:translated_delta\ndata:的\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:不再\n\nevent:translated_delta\ndata:支持\n\nevent:translated_delta\ndata:普通\n\nevent:translated_delta\ndata:七天\n\nevent:translated_delta\ndata:无\n\nevent:translated_delta\ndata:理由\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:；\n\nevent:translated_delta\ndata:但\n\nevent:translated_delta\ndata:若\n\nevent:translated_delta\ndata:存在\n\nevent:translated_delta\ndata:质量问题\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:可按\n\nevent:translated_delta\ndata:质量问题\n\nevent:translated_delta\ndata:售后\n\nevent:translated_delta\ndata:规则\n\nevent:translated_delta\ndata:处理\n\nevent:translated_delta\ndata:。\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:最终\n\nevent:translated_delta\ndata:判断\n\nevent:translated_delta\ndata:还需\n\nevent:translated_delta\ndata:结合\n\nevent:translated_delta\ndata:您\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:的真实\n\nevent:translated_delta\ndata:签\n\nevent:translated_delta\ndata:收\n\nevent:translated_delta\ndata:时间\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:属性\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:是否\n\nevent:translated_delta\ndata: Final\n\nevent:translated_delta\ndata: Sale\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:等\n\nevent:translated_delta\ndata:实际情况\n\nevent:translated_delta\ndata:。\ndata:\ndata:\n\nevent:translated_delta\ndata:如果您\n\nevent:translated_delta\ndata:方便\n\nevent:translated_delta\ndata:提供\n\nevent:translated_delta\ndata:具体\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:号\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:我可以\n\nevent:translated_delta\ndata:结合\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:实际情况\n\nevent:translated_delta\ndata:帮\n\nevent:translated_delta\ndata:您\n\nevent:translated_delta\ndata:进一步\n\nevent:translated_delta\ndata:判断\n\nevent:translated_delta\ndata:是否符合\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:条件\n\nevent:translated_delta\ndata:。\n\nevent:final\ndata:关于退货期限，根据平台退货政策知识库（文件：return-policy.txt），主要规则如下：\ndata:\ndata:**七天无理由退货期限**\ndata:- 符合无理由退货条件的普通实物商品，可在规定期限内申请七天无理由退货。\ndata:- 期限以**商品实际签收时间**为依据：签收当天**不计入**，从签收**次日**开始算第1天，需要在**第7个自然日24:00之前**提交退货申请。\ndata:- 举例：9月1日签收 → 9月2日为第1天 → 9月8日为第7天，应在9月8日24:00前提交申请。\ndata:- 注意：发货时间、下单时间和支付时间**不是**起算时间。\ndata:\ndata:**几个重要提示**\ndata:- 七天无理由退货**不是无条件退货**，还需同时满足：商品属于支持无理由退货的类别、申请时间未超期、商品保持完好、无不合理使用影响二次销售、商品及配件赠品齐全、不属于平台规定的不可无理由退货商品。\ndata:- 超过七天期限的，不再支持普通七天无理由退货；但若存在质量问题，可按质量问题售后规则处理。\ndata:- 最终判断还需结合您订单的真实签收时间、商品属性、是否 Final Sale 等实际情况。\ndata:\ndata:如果您方便提供具体订单号，我可以结合订单实际情况帮您进一步判断是否符合退货条件。\n\n"
+  },
+  {
+    "scene": "退款资格咨询",
+    "conversationUuid": "e86722f1-9335-4724-9301-b240b6cabdf9",
+    "model": "deepseek-flash",
+    "intent": "POLICY_QA",
+    "status": "SUCCESS",
+    "traceId": "d1a8764e055a49a38b2d00641033bdae",
+    "steps": [
+      {
+        "name": "classify_intent",
+        "type": "INTENT_CLASSIFICATION",
+        "output": "用户询问是否可以申请退款，属于退款政策咨询，未明确要求提交退款申请。",
+        "status": "SUCCESS",
+        "metadata": "{\"intent\":\"POLICY_QA\",\"provider\":\"deepseek\",\"model\":\"deepseek-flash\"}",
+        "latencyMs": 1310
+      },
+      {
+        "name": "supervisor_worker_plan",
+        "type": "ROUTER",
+        "output": "policy_rag",
+        "status": "SUCCESS",
+        "metadata": "{\"requiresApproval\":false,\"requiresIdentityVerification\":false,\"recommendHumanHandoff\":false,\"riskLevel\":\"MEDIUM\",\"toolAllowlist\":[\"refundPolicyRAG\"],\"specialist\":\"policy_rag\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "AI_WORKING",
+        "type": "STATE",
+        "output": "AI_WORKING",
+        "status": "SUCCESS",
+        "metadata": "{\"specialist\":\"policy_rag\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "load_recent_messages",
+        "type": "MEMORY",
+        "output": "historyCount=1",
+        "status": "SUCCESS",
+        "metadata": "{\"conversationUuid\":\"e86722f1-9335-4724-9301-b240b6cabdf9\",\"historyCount\":1}",
+        "latencyMs": 8
+      },
+      {
+        "name": "refundPolicyRAG",
+        "type": "TOOL",
+        "output": "{\"context\":\"【来源 1】\\n文件：refund-policy.txt\\n片段：7\\n内容：本退款政策不包含任何真实用户订单信息。\\r\\n\\r\\n以下问题必须使用订单或支付工具：\\r\\n\\r\\nORD001 是否已经退款；\\r\\n某个订单支付了多少钱；\\r\\n某个订单使用什么支付方式；\\r\\n某个订单是否已经退货；\\r\\n某个退款是否已经到账。\\r\\n\\r\\n\\r\\n[REF-1002] Policy Tool 和 Action Tool 的区别\\r\\n\\r\\nPolicy Tool 用于查询：\\r\\n\\r\\n是否允许退款；\\r\\n退款规则；\\r\\n退款期限；\\r\\n退款到账时间；\\r\\n资金去向。\\r\\n\\r\\nAction Tool 用于：\\r\\n\\r\\n创建退款请求；\\r\\n创建补发请求；\\r\\n提交需要审批的业务动作。\\r\\n\\r\\n查询政策本身不得自动触发 Action Tool。\\r\\n\\r\\n\\r\\n==================================================\\r\\n十二、常见问答\\r\\n==================================================\\r\\n\\r\\n[REF-FAQ-001]\\r\\n问：退款多久到账？\\r\\n答：到账时间取决于支付方式。支付宝和微信通常数分钟至3个工作日，银行卡通常1至7个工作日，信用卡通常3至15个工作日。最终以支付渠道实际处理结果为准。\\r\\n\\r\\n[REF-FAQ-002]\\r\\n问：退款退到哪里？\\r\\n答：原则上按照原支付渠道退回。\\r\\n\\r\\n[REF-FAQ-003]\\r\\n问：申请退款以后钱就会马上到账吗？\\r\\n答：不会。退款申请、退款审批、退款发起和实际到账属于不同阶段。\\r\\n\\r\\n[REF-FAQ-004]\\r\\n问：退一件商品为什么不是按原价退款？\\r\\n答：如果订单使用优惠券、满减等优惠，退款按照实际支付金额及优惠分摊结果计算。\\r\\n\\r\\n[REF-FAQ-005]\\r\\n问：商品有质量问题可以退款吗？\\n\\n【来源 2】\\n文件：refund-policy.txt\\n片段：1\\n内容：新创建的退款相关请求进入待处理或待审批状态。\\r\\n\\r\\n实际资金退款由后续业务系统或人工审批流程执行。\\r\\n\\r\\n\\r\\n==================================================\\r\\n二、可以申请退款的主要情形\\r\\n==================================================\\r\\n\\r\\n[REF-101] 未发货订单退款\\r\\n\\r\\n订单尚未发货且满足取消条件时，消费者可以申请取消订单和退款。\\r\\n\\r\\n是否允许取消必须根据真实订单状态判断。\\r\\n\\r\\n\\r\\n[REF-102] 退货退款\\r\\n\\r\\n消费者已经获得退货资格并完成退货流程后，可以进入退货退款流程。\\r\\n\\r\\n创建退货申请本身不等于退款已经执行。\\r\\n\\r\\n通常需要经过：\\r\\n\\r\\n退货申请；\\r\\n审核；\\r\\n商品寄回；\\r\\n商家验收；\\r\\n退款处理。\\r\\n\\r\\n\\r\\n[REF-103] 质量问题退款\\r\\n\\r\\n如果商品存在经确认的质量问题，可以根据问题程度申请：\\r\\n\\r\\n退款；\\r\\n退货退款；\\r\\n换货；\\r\\n补发；\\r\\n其他适用的售后处理。\\r\\n\\r\\n\\r\\n[REF-104] 错发或少发\\r\\n\\r\\n订单存在错发、少发或者漏发时，可以根据实际情况处理：\\r\\n\\r\\n补发正确商品；\\r\\n补发缺少商品；\\r\\n对缺少部分进行退款；\\r\\n其他适用的售后方案。\\r\\n\\r\\n\\r\\n[REF-105] 包裹确认丢失\\r\\n\\r\\n如果物流调查确认包裹丢失且消费者未收到商品，可以根据业务情况提供：\\r\\n\\r\\n补发；\\r\\n退款。\\r\\n\\r\\n是否补发或退款，应根据用户选择和订单实际情况处理。\\r\\n\\r\\n\\r\\n[REF-106] 重复支付\\r\\n\\r\\n如果同一应付订单发生可核实的重复支付，可以对重复支付部分申请退款。\\r\\n\\r\\n\\r\\n==================================================\\n\\n【来源 3】\\n文件：refund-policy.txt\\n片段：4\\n内容：使用平台余额支付的金额，退款成功后退回平台余额。\\r\\n\\r\\n\\r\\n[REF-503] 第三方支付退款\\r\\n\\r\\n使用支付宝、微信等第三方支付渠道支付的款项，在退款实际执行后由支付渠道按照其结算流程处理。\\r\\n\\r\\n\\r\\n[REF-504] 银行卡退款\\r\\n\\r\\n银行卡退款在平台成功发起后，还需要",
+        "status": "SUCCESS",
+        "metadata": "{\"source\":\"toolCallbackScope\"}",
+        "latencyMs": 416
+      },
+      {
+        "name": "assistant_response",
+        "type": "FINAL_ANSWER",
+        "output": "可以的，能否退款取决于您的具体订单情况。根据我们的退款政策知识库（refund-policy.txt），以下是允许申请退款的主要情形：\n\n1. **未发货订单**：订单尚未发货且满足取消条件时，可申请取消订单并退款（需根据真实订单状态判断）。\n2. **退货退款**：已获得退货资格并完成退货流程后，可进入退货退款流程（需经过退货申请、审核、寄回、验收、退款处理等步骤）。\n3. **质量问题**：商品存在经确认的质量问题，可按问题程度申请退款、退货退款、换货或补发。\n4. **错发/少发/漏发**：可补发或对缺少部分退款。\n5. **包裹确认丢失**：物流调查确认丢失且未收到商品，可补发或退款。\n6. **重复支付**：发生可核实的重复支付，可对重复部分申请退款。\n\n需要提醒您几点：\n- 退款和退货是两回事：退货是商品逆向流转，退款是资金逆向流转。\n- 退款申请提交后只是进入**待处理或待审批状态**，并不代表退款已完成；实际资金退款需由业务系统或人工审批流程执行。\n- 退款到账时间取决于支付方式：支付宝/微信通常数分钟至3个工作日，银行卡1至7个工作日，信用卡3至15个工作日，最终以支付渠道实际处理结果为准。\n\n为了帮您准确判断能否退款，请提供**具体订单号**以及您遇到的情况（如未发货、质量问题、少发等），我再为您进一步核实。",
+        "status": "SUCCESS",
+        "metadata": "{}",
+        "latencyMs": 4299
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "我可以申请退款吗？"
+      },
+      {
+        "role": "assistant",
+        "content": "可以的，能否退款取决于您的具体订单情况。根据我们的退款政策知识库（refund-policy.txt），以下是允许申请退款的主要情形：\n\n1. **未发货订单**：订单尚未发货且满足取消条件时，可申请取消订单并退款（需根据真实订单状态判断）。\n2. **退货退款**：已获得退货资格并完成退货流程后，可进入退货退款流程（需经过退货申请、审核、寄回、验收、退款处理等步骤）。\n3. **质量问题**：商品存在经确认的质量问题，可按问题程度申请退款、退货退款、换货或补发。\n4. **错发/少发/漏发**：可补发或对缺少部分退款。\n5. **包裹确认丢失**：物流调查确认丢失且未收到商品，可补发或退款。\n6. **重复支付**：发生可核实的重复支付，可对重复部分申请退款。\n\n需要提醒您几点：\n- 退款和退货是两回事：退货是商品逆向流转，退款是资金逆向流转。\n- 退款申请提交后只是进入**待处理或待审批状态**，并不代表退款已完成；实际资金退款需由业务系统或人工审批流程执行。\n- 退款到账时间取决于支付方式：支付宝/微信通常数分钟至3个工作日，银行卡1至7个工作日，信用卡3至15个工作日，最终以支付渠道实际处理结果为准。\n\n为了帮您准确判断能否退款，请提供**具体订单号**以及您遇到的情况（如未发货、质量问题、少发等），我再为您进一步核实。"
+      }
+    ],
+    "returnRequestDelta": 0,
+    "sse": "event:status\ndata:PROCESSING\n\nevent:translated_delta\ndata:可以的\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:能否\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:取决于\n\nevent:translated_delta\ndata:您的\n\nevent:translated_delta\ndata:具体\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:情况\n\nevent:translated_delta\ndata:。\n\nevent:translated_delta\ndata:根据\n\nevent:translated_delta\ndata:我们的\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:政策\n\nevent:translated_delta\ndata:知识\n\nevent:translated_delta\ndata:库\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:ref\n\nevent:translated_delta\ndata:und\n\nevent:translated_delta\ndata:-p\n\nevent:translated_delta\ndata:olicy\n\nevent:translated_delta\ndata:.txt\n\nevent:translated_delta\ndata:），\n\nevent:translated_delta\ndata:以下是\n\nevent:translated_delta\ndata:允许\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:的主要\n\nevent:translated_delta\ndata:情形\n\nevent:translated_delta\ndata:：\ndata:\ndata:\n\nevent:translated_delta\ndata:1\n\nevent:translated_delta\ndata:.\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:未\n\nevent:translated_delta\ndata:发货\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:尚未\n\nevent:translated_delta\ndata:发货\n\nevent:translated_delta\ndata:且\n\nevent:translated_delta\ndata:满足\n\nevent:translated_delta\ndata:取消\n\nevent:translated_delta\ndata:条件\n\nevent:translated_delta\ndata:时\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:可\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:取消\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:并\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:需\n\nevent:translated_delta\ndata:根据\n\nevent:translated_delta\ndata:真实\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:状态\n\nevent:translated_delta\ndata:判断\n\nevent:translated_delta\ndata:）。\ndata:\n\nevent:translated_delta\ndata:2\n\nevent:translated_delta\ndata:.\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:已\n\nevent:translated_delta\ndata:获得\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:资格\n\nevent:translated_delta\ndata:并\n\nevent:translated_delta\ndata:完成\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:流程\n\nevent:translated_delta\ndata:后\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:可\n\nevent:translated_delta\ndata:进入\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:流程\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:需\n\nevent:translated_delta\ndata:经过\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:审核\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:寄\n\nevent:translated_delta\ndata:回\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:验收\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:处理\n\nevent:translated_delta\ndata:等\n\nevent:translated_delta\ndata:步骤\n\nevent:translated_delta\ndata:）。\ndata:\n\nevent:translated_delta\ndata:3\n\nevent:translated_delta\ndata:.\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:质量问题\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:存在\n\nevent:translated_delta\ndata:经\n\nevent:translated_delta\ndata:确认\n\nevent:translated_delta\ndata:的质量\n\nevent:translated_delta\ndata:问题\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:可按\n\nevent:translated_delta\ndata:问题\n\nevent:translated_delta\ndata:程度\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:换\n\nevent:translated_delta\ndata:货\n\nevent:translated_delta\ndata:或\n\nevent:translated_delta\ndata:补\n\nevent:translated_delta\ndata:发\n\nevent:translated_delta\ndata:。\ndata:\n\nevent:translated_delta\ndata:4\n\nevent:translated_delta\ndata:.\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:错\n\nevent:translated_delta\ndata:发\n\nevent:translated_delta\ndata:/\n\nevent:translated_delta\ndata:少\n\nevent:translated_delta\ndata:发\n\nevent:translated_delta\ndata:/\n\nevent:translated_delta\ndata:漏\n\nevent:translated_delta\ndata:发\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:可\n\nevent:translated_delta\ndata:补\n\nevent:translated_delta\ndata:发\n\nevent:translated_delta\ndata:或\n\nevent:translated_delta\ndata:对\n\nevent:translated_delta\ndata:缺少\n\nevent:translated_delta\ndata:部分\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:。\ndata:\n\nevent:translated_delta\ndata:5\n\nevent:translated_delta\ndata:.\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:包裹\n\nevent:translated_delta\ndata:确认\n\nevent:translated_delta\ndata:丢失\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:物流\n\nevent:translated_delta\ndata:调查\n\nevent:translated_delta\ndata:确认\n\nevent:translated_delta\ndata:丢失\n\nevent:translated_delta\ndata:且\n\nevent:translated_delta\ndata:未\n\nevent:translated_delta\ndata:收到\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:可\n\nevent:translated_delta\ndata:补\n\nevent:translated_delta\ndata:发\n\nevent:translated_delta\ndata:或\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:。\ndata:\n\nevent:translated_delta\ndata:6\n\nevent:translated_delta\ndata:.\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:重复\n\nevent:translated_delta\ndata:支付\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:发生\n\nevent:translated_delta\ndata:可\n\nevent:translated_delta\ndata:核\n\nevent:translated_delta\ndata:实的\n\nevent:translated_delta\ndata:重复\n\nevent:translated_delta\ndata:支付\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:可\n\nevent:translated_delta\ndata:对\n\nevent:translated_delta\ndata:重复\n\nevent:translated_delta\ndata:部分\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:。\ndata:\ndata:\n\nevent:translated_delta\ndata:需要\n\nevent:translated_delta\ndata:提醒\n\nevent:translated_delta\ndata:您\n\nevent:translated_delta\ndata:几点\n\nevent:translated_delta\ndata:：\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:和\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:是\n\nevent:translated_delta\ndata:两\n\nevent:translated_delta\ndata:回事\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:退货\n\nevent:translated_delta\ndata:是\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:逆向\n\nevent:translated_delta\ndata:流转\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:是\n\nevent:translated_delta\ndata:资金\n\nevent:translated_delta\ndata:逆向\n\nevent:translated_delta\ndata:流转\n\nevent:translated_delta\ndata:。\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:提交\n\nevent:translated_delta\ndata:后\n\nevent:translated_delta\ndata:只是\n\nevent:translated_delta\ndata:进入\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:待\n\nevent:translated_delta\ndata:处理\n\nevent:translated_delta\ndata:或\n\nevent:translated_delta\ndata:待\n\nevent:translated_delta\ndata:审批\n\nevent:translated_delta\ndata:状态\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:并不\n\nevent:translated_delta\ndata:代表\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:已完成\n\nevent:translated_delta\ndata:；\n\nevent:translated_delta\ndata:实际\n\nevent:translated_delta\ndata:资金\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:需\n\nevent:translated_delta\ndata:由\n\nevent:translated_delta\ndata:业务\n\nevent:translated_delta\ndata:系统\n\nevent:translated_delta\ndata:或\n\nevent:translated_delta\ndata:人工\n\nevent:translated_delta\ndata:审批\n\nevent:translated_delta\ndata:流程\n\nevent:translated_delta\ndata:执行\n\nevent:translated_delta\ndata:。\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:到\n\nevent:translated_delta\ndata:账\n\nevent:translated_delta\ndata:时间\n\nevent:translated_delta\ndata:取决于\n\nevent:translated_delta\ndata:支付\n\nevent:translated_delta\ndata:方式\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:支付宝\n\nevent:translated_delta\ndata:/\n\nevent:translated_delta\ndata:微信\n\nevent:translated_delta\ndata:通常\n\nevent:translated_delta\ndata:数\n\nevent:translated_delta\ndata:分钟\n\nevent:translated_delta\ndata:至\n\nevent:translated_delta\ndata:3\n\nevent:translated_delta\ndata:个\n\nevent:translated_delta\ndata:工作日\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:银行卡\n\nevent:translated_delta\ndata:1\n\nevent:translated_delta\ndata:至\n\nevent:translated_delta\ndata:7\n\nevent:translated_delta\ndata:个\n\nevent:translated_delta\ndata:工作日\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:信用卡\n\nevent:translated_delta\ndata:3\n\nevent:translated_delta\ndata:至\n\nevent:translated_delta\ndata:15\n\nevent:translated_delta\ndata:个\n\nevent:translated_delta\ndata:工作日\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:最终\n\nevent:translated_delta\ndata:以\n\nevent:translated_delta\ndata:支付\n\nevent:translated_delta\ndata:渠道\n\nevent:translated_delta\ndata:实际\n\nevent:translated_delta\ndata:处理\n\nevent:translated_delta\ndata:结果\n\nevent:translated_delta\ndata:为准\n\nevent:translated_delta\ndata:。\ndata:\ndata:\n\nevent:translated_delta\ndata:为了\n\nevent:translated_delta\ndata:帮\n\nevent:translated_delta\ndata:您\n\nevent:translated_delta\ndata:准确\n\nevent:translated_delta\ndata:判断\n\nevent:translated_delta\ndata:能否\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:请\n\nevent:translated_delta\ndata:提供\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:具体\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:号\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:以及\n\nevent:translated_delta\ndata:您\n\nevent:translated_delta\ndata:遇到\n\nevent:translated_delta\ndata:的情况\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:如\n\nevent:translated_delta\ndata:未\n\nevent:translated_delta\ndata:发货\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:质量问题\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:少\n\nevent:translated_delta\ndata:发\n\nevent:translated_delta\ndata:等\n\nevent:translated_delta\ndata:），\n\nevent:translated_delta\ndata:我再\n\nevent:translated_delta\ndata:为您\n\nevent:translated_delta\ndata:进一步\n\nevent:translated_delta\ndata:核实\n\nevent:translated_delta\ndata:。\n\nevent:final\ndata:可以的，能否退款取决于您的具体订单情况。根据我们的退款政策知识库（refund-policy.txt），以下是允许申请退款的主要情形：\ndata:\ndata:1. **未发货订单**：订单尚未发货且满足取消条件时，可申请取消订单并退款（需根据真实订单状态判断）。\ndata:2. **退货退款**：已获得退货资格并完成退货流程后，可进入退货退款流程（需经过退货申请、审核、寄回、验收、退款处理等步骤）。\ndata:3. **质量问题**：商品存在经确认的质量问题，可按问题程度申请退款、退货退款、换货或补发。\ndata:4. **错发/少发/漏发**：可补发或对缺少部分退款。\ndata:5. **包裹确认丢失**：物流调查确认丢失且未收到商品，可补发或退款。\ndata:6. **重复支付**：发生可核实的重复支付，可对重复部分申请退款。\ndata:\ndata:需要提醒您几点：\ndata:- 退款和退货是两回事：退货是商品逆向流转，退款是资金逆向流转。\ndata:- 退款申请提交后只是进入**待处理或待审批状态**，并不代表退款已完成；实际资金退款需由业务系统或人工审批流程执行。\ndata:- 退款到账时间取决于支付方式：支付宝/微信通常数分钟至3个工作日，银行卡1至7个工作日，信用卡3至15个工作日，最终以支付渠道实际处理结果为准。\ndata:\ndata:为了帮您准确判断能否退款，请提供**具体订单号**以及您遇到的情况（如未发货、质量问题、少发等），我再为您进一步核实。\n\n"
+  },
+  {
+    "scene": "明确申请退款",
+    "conversationUuid": "ac8e5079-bc9d-44ea-9b43-65edbc17364d",
+    "model": "deepseek-flash",
+    "intent": "RETURN_REFUND",
+    "status": "SUCCESS",
+    "traceId": "81b7351253784957a8c42f14042eb8ed",
+    "steps": [
+      {
+        "name": "classify_intent",
+        "type": "INTENT_CLASSIFICATION",
+        "output": "用户明确要求提交订单#2003的退款申请，并给出邮箱和原因，属于创建退款申请的操作意图。",
+        "status": "SUCCESS",
+        "metadata": "{\"intent\":\"RETURN_REFUND\",\"provider\":\"deepseek\",\"model\":\"deepseek-flash\"}",
+        "latencyMs": 1202
+      },
+      {
+        "name": "supervisor_worker_plan",
+        "type": "ROUTER",
+        "output": "return",
+        "status": "SUCCESS",
+        "metadata": "{\"requiresApproval\":true,\"requiresIdentityVerification\":true,\"recommendHumanHandoff\":true,\"riskLevel\":\"HIGH\",\"toolAllowlist\":[\"queryOrder\",\"createReturnRequest\",\"requestRefundOrReplacement\",\"escalateToHuman\"],\"specialist\":\"return\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "AI_WORKING",
+        "type": "STATE",
+        "output": "AI_WORKING",
+        "status": "SUCCESS",
+        "metadata": "{\"specialist\":\"return\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "load_recent_messages",
+        "type": "MEMORY",
+        "output": "historyCount=1",
+        "status": "SUCCESS",
+        "metadata": "{\"conversationUuid\":\"ac8e5079-bc9d-44ea-9b43-65edbc17364d\",\"historyCount\":1}",
+        "latencyMs": 6
+      },
+      {
+        "name": "queryOrder",
+        "type": "TOOL",
+        "output": "{\"orderId\":\"#2003\",\"status\":\"delivered\",\"verified\":true,\"items\":[{\"sku\":\"ZX-MS-WL-001\",\"price\":149,\"title\":\"无线鼠标\",\"quantity\":1,\"image_url\":null}],\"totalAmount\":\"[phone]\",\"currency\":\"CNY\",\"trackingNumber\":\"ZT[phone]\",\"trackingCarrier\":\"中通快递\",\"trackingStatus\":\"delivered\",\"shippingAddress\":\"{\\\"zip\\\": \\\"215000\\\", \\\"city\\\": \\\"苏州市\\\", \\\"state\\\": \\\"江苏省\\\", \\\"street\\\": \\\"工业园区示例路 13 号\\\", \\\"country\\\": \\\"CN\\\"}\",\"message\":\"Verified order details from the tenant order cache.\"}",
+        "status": "SUCCESS",
+        "metadata": "{\"errorCode\":\"\"}",
+        "latencyMs": 3
+      },
+      {
+        "name": "requestRefundOrReplacement",
+        "type": "TOOL",
+        "output": "{\"requestNo\":\"ACT-[phone]828738A8\",\"status\":\"PENDING_HUMAN_APPROVAL\",\"actionType\":\"REFUND\",\"orderNumber\":\"#2003\",\"message\":\"Request created for human review. No external ecommerce action has been executed by AI.\"}",
+        "status": "SUCCESS",
+        "metadata": "{\"errorCode\":\"\"}",
+        "latencyMs": 14
+      },
+      {
+        "name": "assistant_response",
+        "type": "FINAL_ANSWER",
+        "output": "已为您提交订单 **#2003** 的退款申请，详情如下：\n\n- **订单号**：#2003\n- **商品**：无线鼠标（ZX-MS-WL-001）× 1\n- **订单金额**：149 元\n- **订单状态**：已送达\n- **申请单号**：ACT-[phone]828738A8\n- **申请类型**：退款\n- **申请原因**：商品损坏\n- **当前状态**：待人工审批\n\n需要说明的是，该申请目前仅进入人工审核流程，**退款尚未执行，也未到账**。人工审核完成后会按流程处理，请您耐心等待。如有其他问题，欢迎随时联系我。",
+        "status": "SUCCESS",
+        "metadata": "{}",
+        "latencyMs": 4982
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "请帮我提交订单 #2003 的退款申请，下单邮箱是 wumin@example.com，原因是商品损坏。"
+      },
+      {
+        "role": "assistant",
+        "content": "已为您提交订单 **#2003** 的退款申请，详情如下：\n\n- **订单号**：#2003\n- **商品**：无线鼠标（ZX-MS-WL-001）× 1\n- **订单金额**：149 元\n- **订单状态**：已送达\n- **申请单号**：ACT-20261012231536-828738A8\n- **申请类型**：退款\n- **申请原因**：商品损坏\n- **当前状态**：待人工审批\n\n需要说明的是，该申请目前仅进入人工审核流程，**退款尚未执行，也未到账**。人工审核完成后会按流程处理，请您耐心等待。如有其他问题，欢迎随时联系我。"
+      }
+    ],
+    "returnRequestDelta": 1,
+    "sse": "event:status\ndata:PROCESSING\n\nevent:translated_delta\ndata:已\n\nevent:translated_delta\ndata:为您\n\nevent:translated_delta\ndata:提交\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:#\n\nevent:translated_delta\ndata:200\n\nevent:translated_delta\ndata:3\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:的\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:详情\n\nevent:translated_delta\ndata:如下\n\nevent:translated_delta\ndata:：\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:号\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：#\n\nevent:translated_delta\ndata:200\n\nevent:translated_delta\ndata:3\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:无线\n\nevent:translated_delta\ndata:鼠标\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:ZX\n\nevent:translated_delta\ndata:-MS\n\nevent:translated_delta\ndata:-W\n\nevent:translated_delta\ndata:L\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata:001\n\nevent:translated_delta\ndata:）×\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:1\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:金额\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:149\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:元\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:状态\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:已\n\nevent:translated_delta\ndata:送达\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:单\n\nevent:translated_delta\ndata:号\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:ACT\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata:202\n\nevent:translated_delta\ndata:610\n\nevent:translated_delta\ndata:122\n\nevent:translated_delta\ndata:315\n\nevent:translated_delta\ndata:36\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata:828\n\nevent:translated_delta\ndata:738\n\nevent:translated_delta\ndata:A\n\nevent:translated_delta\ndata:8\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:类型\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:原因\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:商品\n\nevent:translated_delta\ndata:损坏\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:当前\n\nevent:translated_delta\ndata:状态\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:待\n\nevent:translated_delta\ndata:人工\n\nevent:translated_delta\ndata:审批\n\nevent:translated_delta\ndata:\ndata:\ndata:\n\nevent:translated_delta\ndata:需要\n\nevent:translated_delta\ndata:说明\n\nevent:translated_delta\ndata:的是\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:该\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata:目前\n\nevent:translated_delta\ndata:仅\n\nevent:translated_delta\ndata:进入\n\nevent:translated_delta\ndata:人工\n\nevent:translated_delta\ndata:审核\n\nevent:translated_delta\ndata:流程\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:退款\n\nevent:translated_delta\ndata:尚未\n\nevent:translated_delta\ndata:执行\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:也未\n\nevent:translated_delta\ndata:到\n\nevent:translated_delta\ndata:账\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:。\n\nevent:translated_delta\ndata:人工\n\nevent:translated_delta\ndata:审核\n\nevent:translated_delta\ndata:完成后\n\nevent:translated_delta\ndata:会\n\nevent:translated_delta\ndata:按\n\nevent:translated_delta\ndata:流程\n\nevent:translated_delta\ndata:处理\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:请您\n\nevent:translated_delta\ndata:耐心\n\nevent:translated_delta\ndata:等待\n\nevent:translated_delta\ndata:。\n\nevent:translated_delta\ndata:如有\n\nevent:translated_delta\ndata:其他\n\nevent:translated_delta\ndata:问题\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:欢迎\n\nevent:translated_delta\ndata:随时\n\nevent:translated_delta\ndata:联系\n\nevent:translated_delta\ndata:我\n\nevent:translated_delta\ndata:。\n\nevent:final\ndata:已为您提交订单 **#2003** 的退款申请，详情如下：\ndata:\ndata:- **订单号**：#2003\ndata:- **商品**：无线鼠标（ZX-MS-WL-001）× 1\ndata:- **订单金额**：149 元\ndata:- **订单状态**：已送达\ndata:- **申请单号**：ACT-20261012231536-828738A8\ndata:- **申请类型**：退款\ndata:- **申请原因**：商品损坏\ndata:- **当前状态**：待人工审批\ndata:\ndata:需要说明的是，该申请目前仅进入人工审核流程，**退款尚未执行，也未到账**。人工审核完成后会按流程处理，请您耐心等待。如有其他问题，欢迎随时联系我。\n\n"
+  },
+  {
+    "scene": "转人工客服",
+    "conversationUuid": "71eeeb90-ccaa-4a66-915e-7fcecac433aa",
+    "model": "deepseek-flash",
+    "intent": "HUMAN_REQUEST",
+    "status": "SUCCESS",
+    "traceId": "8a3d7db93fdd444db3381500bd14eb83",
+    "steps": [
+      {
+        "name": "classify_intent",
+        "type": "INTENT_CLASSIFICATION",
+        "output": "用户明确表达要转人工客服。",
+        "status": "SUCCESS",
+        "metadata": "{\"intent\":\"HUMAN_REQUEST\",\"provider\":\"deepseek\",\"model\":\"deepseek-flash\"}",
+        "latencyMs": 1038
+      },
+      {
+        "name": "supervisor_worker_plan",
+        "type": "ROUTER",
+        "output": "handoff",
+        "status": "SUCCESS",
+        "metadata": "{\"requiresApproval\":false,\"requiresIdentityVerification\":false,\"recommendHumanHandoff\":true,\"riskLevel\":\"HIGH\",\"toolAllowlist\":[\"escalateToHuman\"],\"specialist\":\"handoff\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "AI_WORKING",
+        "type": "STATE",
+        "output": "AI_WORKING",
+        "status": "SUCCESS",
+        "metadata": "{\"specialist\":\"handoff\"}",
+        "latencyMs": 0
+      },
+      {
+        "name": "load_recent_messages",
+        "type": "MEMORY",
+        "output": "historyCount=1",
+        "status": "SUCCESS",
+        "metadata": "{\"conversationUuid\":\"71eeeb90-ccaa-4a66-915e-7fcecac433aa\",\"historyCount\":1}",
+        "latencyMs": 7
+      },
+      {
+        "name": "escalateToHuman",
+        "type": "TOOL",
+        "output": "{\"ticketId\":\"TKT-[phone]FCDE55AD\",\"estimatedWaitMinutes\":5,\"status\":\"PENDING\",\"message\":\"Human escalation ticket created and waiting for assignment.\"}",
+        "status": "SUCCESS",
+        "metadata": "{\"errorCode\":\"\"}",
+        "latencyMs": 60
+      },
+      {
+        "name": "assistant_response",
+        "type": "FINAL_ANSWER",
+        "output": "您好，已为您提交转人工客服申请 ✅\n\n- **工单号**：TKT-[phone]FCDE55AD\n- **预计等待时间**：约 5 分钟\n- **当前状态**：排队等待分配\n\n人工客服会尽快接入为您服务。为方便快速处理，您也可以先补充一下具体问题（例如订单号、遇到的情况），这样人工客服接入后能更快帮您解决。",
+        "status": "SUCCESS",
+        "metadata": "{}",
+        "latencyMs": 2731
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "我要转人工客服"
+      },
+      {
+        "role": "assistant",
+        "content": "您好，已为您提交转人工客服申请 ✅\n\n- **工单号**：TKT-20261012231542-FCDE55AD\n- **预计等待时间**：约 5 分钟\n- **当前状态**：排队等待分配\n\n人工客服会尽快接入为您服务。为方便快速处理，您也可以先补充一下具体问题（例如订单号、遇到的情况），这样人工客服接入后能更快帮您解决。"
+      }
+    ],
+    "returnRequestDelta": 0,
+    "sse": "event:status\ndata:PROCESSING\n\nevent:translated_delta\ndata:您好\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:已\n\nevent:translated_delta\ndata:为您\n\nevent:translated_delta\ndata:提交\n\nevent:translated_delta\ndata:转\n\nevent:translated_delta\ndata:人工\n\nevent:translated_delta\ndata:客服\n\nevent:translated_delta\ndata:申请\n\nevent:translated_delta\ndata: ✅\n\nevent:translated_delta\ndata:\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:工\n\nevent:translated_delta\ndata:单\n\nevent:translated_delta\ndata:号\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:T\n\nevent:translated_delta\ndata:KT\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata:202\n\nevent:translated_delta\ndata:610\n\nevent:translated_delta\ndata:122\n\nevent:translated_delta\ndata:315\n\nevent:translated_delta\ndata:42\n\nevent:translated_delta\ndata:-F\n\nevent:translated_delta\ndata:CD\n\nevent:translated_delta\ndata:E\n\nevent:translated_delta\ndata:55\n\nevent:translated_delta\ndata:AD\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:预计\n\nevent:translated_delta\ndata:等待\n\nevent:translated_delta\ndata:时间\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:约\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:5\n\nevent:translated_delta\ndata: \n\nevent:translated_delta\ndata:分钟\n\nevent:translated_delta\ndata:\ndata:\n\nevent:translated_delta\ndata:-\n\nevent:translated_delta\ndata: **\n\nevent:translated_delta\ndata:当前\n\nevent:translated_delta\ndata:状态\n\nevent:translated_delta\ndata:**\n\nevent:translated_delta\ndata:：\n\nevent:translated_delta\ndata:排队\n\nevent:translated_delta\ndata:等待\n\nevent:translated_delta\ndata:分配\n\nevent:translated_delta\ndata:\ndata:\ndata:\n\nevent:translated_delta\ndata:人工\n\nevent:translated_delta\ndata:客服\n\nevent:translated_delta\ndata:会\n\nevent:translated_delta\ndata:尽快\n\nevent:translated_delta\ndata:接入\n\nevent:translated_delta\ndata:为您\n\nevent:translated_delta\ndata:服务\n\nevent:translated_delta\ndata:。\n\nevent:translated_delta\ndata:为\n\nevent:translated_delta\ndata:方便\n\nevent:translated_delta\ndata:快速\n\nevent:translated_delta\ndata:处理\n\nevent:translated_delta\ndata:，\n\nevent:translated_delta\ndata:您\n\nevent:translated_delta\ndata:也可以\n\nevent:translated_delta\ndata:先\n\nevent:translated_delta\ndata:补充\n\nevent:translated_delta\ndata:一下\n\nevent:translated_delta\ndata:具体\n\nevent:translated_delta\ndata:问题\n\nevent:translated_delta\ndata:（\n\nevent:translated_delta\ndata:例如\n\nevent:translated_delta\ndata:订单\n\nevent:translated_delta\ndata:号\n\nevent:translated_delta\ndata:、\n\nevent:translated_delta\ndata:遇到\n\nevent:translated_delta\ndata:的情况\n\nevent:translated_delta\ndata:），\n\nevent:translated_delta\ndata:这样\n\nevent:translated_delta\ndata:人工\n\nevent:translated_delta\ndata:客服\n\nevent:translated_delta\ndata:接入\n\nevent:translated_delta\ndata:后\n\nevent:translated_delta\ndata:能\n\nevent:translated_delta\ndata:更快\n\nevent:translated_delta\ndata:帮\n\nevent:translated_delta\ndata:您\n\nevent:translated_delta\ndata:解决\n\nevent:translated_delta\ndata:。\n\nevent:final\ndata:您好，已为您提交转人工客服申请 ✅\ndata:\ndata:- **工单号**：TKT-20261012231542-FCDE55AD\ndata:- **预计等待时间**：约 5 分钟\ndata:- **当前状态**：排队等待分配\ndata:\ndata:人工客服会尽快接入为您服务。为方便快速处理，您也可以先补充一下具体问题（例如订单号、遇到的情况），这样人工客服接入后能更快帮您解决。\n\n"
+  }
+]

@@ -91,7 +91,8 @@ class AgentToolIsolationTest {
         var names = guardedNames(plan);
 
         assertThat(names).containsExactlyInAnyOrder("queryOrder", "createReturnRequest",
-                "requestRefundOrReplacement", "requestAddressChange", "escalateToHuman");
+                "requestRefundOrReplacement", "escalateToHuman");
+        assertThat(names).doesNotContain("requestAddressChange");
         // 售后链路不应出现商品检索
         assertThat(names).doesNotContain("searchProductCatalog");
     }

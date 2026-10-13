@@ -64,6 +64,16 @@ public class ChatMessagePersistenceService {
         return saved;
     }
 
+    /** 分类完成后只更新会话意图，不重复插入用户消息。 */
+    @Transactional
+    public void updateIntent(Conversation conversation, String intent) {
+        conversationMapper.update(null, new LambdaUpdateWrapper<Conversation>()
+                .eq(Conversation::getId, conversation.getId())
+                .eq(Conversation::getTenantId, conversation.getTenantId())
+                .set(Conversation::getIntentPrimary, intent));
+        conversation.setIntentPrimary(intent);
+    }
+
     /**
      * 持久化模型成功完成后的 assistant 消息。
      *

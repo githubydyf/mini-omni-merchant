@@ -91,7 +91,14 @@ class ReActAgentServiceStreamTest {
         // 轨迹服务在流式语义测试中不作断言，用 mock 并让其 startChatRun 返回固定 traceId
         var traceService = mock(AgentTraceService.class);
         when(traceService.startChatRun(any(), anyString(), anyString(), any(), any(), anyString()))
-                .thenReturn("trace-test");
+                .thenAnswer(inv -> {
+                    assertThat(com.omnimerchant.tenant.context.TenantContextHolder.get()).isEqualTo(1001L);
+                    return "trace-test";
+                });
+        org.mockito.Mockito.doAnswer(inv -> {
+            assertThat(com.omnimerchant.tenant.context.TenantContextHolder.get()).isEqualTo(1001L);
+            return null;
+        }).when(traceService).completeRun(anyString(), anyString(), any(), any());
         // 状态机在流式语义测试中不作断言；startRun/completeRun/failRun 均为无副作用桩
         var stateMachine = mock(AgentStateMachineService.class);
         // ModelRouter 返回桩模型；韧性服务直通；Token 用量不作断言
@@ -230,6 +237,33 @@ class ReActAgentServiceStreamTest {
 
         assertThat(events).hasSize(1);
         assertThat(events.get(0).type()).isEqualTo("error");
+    }
+
+    @org.junit.jupiter.api.DisplayName("模型信号线程残留其他租户时，消息和轨迹仍在本轮租户下收尾")
+    @Test
+    void terminalPersistenceAndTraceRestoreTenantScope() {
+        var persistence = mock(ChatMessagePersistenceService.class);
+        when(persistence.saveAssistantMessage(any(), anyString(), anyString(), anyInt()))
+                .thenAnswer(inv -> {
+                    assertThat(com.omnimerchant.tenant.context.TenantContextHolder.get()).isEqualTo(1001L);
+                    return new ChatMessage();
+                });
+        var model = new ChatModel() {
+            public ChatResponse call(Prompt prompt) { return response("中文回复"); }
+            public Flux<ChatResponse> stream(Prompt prompt) {
+                return Flux.just(response("中文回复")).doOnNext(ignored ->
+                        com.omnimerchant.tenant.context.TenantContextHolder.set(1002L));
+            }
+        };
+        com.omnimerchant.tenant.context.TenantContextHolder.set(1002L);
+        try {
+            var events = service(model, persistence).chatEvents(conversation(), "退货期限是多少天？", "POLICY_QA")
+                    .collectList().block();
+            assertThat(events).extracting(ChatStreamEvent::type).contains("final").doesNotContain("error");
+            assertThat(com.omnimerchant.tenant.context.TenantContextHolder.get()).isEqualTo(1002L);
+        } finally {
+            com.omnimerchant.tenant.context.TenantContextHolder.clear();
+        }
     }
 
     @Test

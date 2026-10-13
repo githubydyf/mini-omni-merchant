@@ -15,7 +15,7 @@ import java.util.Locale;
  * <p>本类不调用大模型，也不执行 Tool；真正的 Tool 白名单过滤由
  * {@code AgentExecutionGuardService} 在 Java 层强制执行（不是靠 Prompt 约束模型）。
  *
- * <p>本阶段暂时不做自动 Intent 识别，intent 由调用方显式传入。
+ * <p>买家入口由独立分类服务提供 Intent，本类继续只负责规则编排。
  */
 @Service
 public class AgentOrchestratorService {
@@ -38,8 +38,15 @@ public class AgentOrchestratorService {
                     angry ? List.of("queryOrder", "trackLogistics", "escalateToHuman")
                             : List.of("queryOrder", "trackLogistics"),
                     angry ? "HIGH" : "MEDIUM", false, false, angry);
-            case "RETURN_REFUND", "CANCEL_ORDER", "ADDRESS_CHANGE" -> new SpecialistPlan("return", "退货/退款智能体",
-                    List.of("queryOrder", "createReturnRequest", "requestRefundOrReplacement", "requestAddressChange", "escalateToHuman"),
+            case "RETURN_REFUND" -> new SpecialistPlan("return", "退货/退款智能体",
+                    List.of("queryOrder", "createReturnRequest", "requestRefundOrReplacement", "escalateToHuman"),
+                    "HIGH", true, true, true);
+            case "ADDRESS_CHANGE" -> new SpecialistPlan("return", "收货地址申请智能体",
+                    List.of("queryOrder", "requestAddressChange", "escalateToHuman"),
+                    "HIGH", true, true, true);
+            // 当前没有取消订单业务工具，交给人工处理，不能借用退款或改址工具。
+            case "CANCEL_ORDER" -> new SpecialistPlan("handoff", "订单取消交接智能体",
+                    List.of("queryOrder", "escalateToHuman"),
                     "HIGH", true, true, true);
             case "PRODUCT_ADVICE" -> new SpecialistPlan("product", "商品顾问智能体",
                     List.of("searchProductCatalog"), "LOW", false, false, false);

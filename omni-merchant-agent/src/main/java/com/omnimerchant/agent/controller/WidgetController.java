@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omnimerchant.agent.dto.WidgetDtos;
 import com.omnimerchant.agent.service.ChatMessagePersistenceService;
 import com.omnimerchant.agent.service.ConversationLifecycleService;
+import com.omnimerchant.agent.service.IntentClassificationService;
+import com.omnimerchant.agent.memory.ConversationMemoryService;
 import com.omnimerchant.agent.service.ReActAgentService;
 import com.omnimerchant.agent.service.WidgetSessionService;
 import com.omnimerchant.common.constant.Constants;
@@ -25,7 +27,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * Widget 买家在线客服接口。
@@ -46,18 +47,11 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class WidgetController {
 
-    /**
-     * Widget 允许的咨询意图白名单。
-     *
-     * <p>只包含只读类咨询；退款 / 退货 / 改址 / 取消等副作用意图仍走各自既有 intent
-     * （需真实身份核验 + 工具守卫 + 幂等 + 人工审批）。未知意图回退为 {@code GENERAL}。
-     */
-    private static final Set<String> WIDGET_ALLOWED_INTENTS = Set.of(
-            "GENERAL", "POLICY_QA", "ORDER_STATUS", "LOGISTICS", "PRODUCT_ADVICE", "HUMAN_REQUEST");
-
     private final WidgetSessionService widgetSessionService;
     private final ConversationLifecycleService conversationLifecycleService;
     private final ChatMessagePersistenceService chatMessagePersistenceService;
+    private final ConversationMemoryService conversationMemoryService;
+    private final IntentClassificationService intentClassificationService;
     private final ReActAgentService reActAgentService;
     private final ObjectMapper objectMapper;
 
@@ -112,17 +106,19 @@ public class WidgetController {
         try {
             var conversation = conversationLifecycleService.requireForAi(
                     request.conversationUuid(), principal.tenantId());
-            var intent = resolveIntent(request.intent());
-
-            // 3. 先持久化 user 消息（复用后台同一持久化逻辑）
+            // 3. 分类前先持久化用户消息；兼容旧请求字段，但不信任买家传入的 intent。
             var savedUserMessage = chatMessagePersistenceService.saveUserMessage(
-                    conversation, request.message(), intent);
+                    conversation, request.message(), "UNKNOWN");
+            conversationMemoryService.syncUserMessage(conversation, savedUserMessage);
+            var classification = intentClassificationService.classify(conversation, request.message());
+            chatMessagePersistenceService.updateIntent(conversation, classification.intent());
 
             log.info("Widget 对话开始：tenantId={}, conversationUuid={}",
                     principal.tenantId(), request.conversationUuid());
 
             // 4. 复用同一 Agent 运行时与 SSE 适配层
-            return ChatSseSupport.stream(reActAgentService, conversation, request.message(), intent, "Widget");
+            return ChatSseSupport.stream(reActAgentService, conversation, request.message(),
+                    classification.intent(), "Widget", classification);
         } finally {
             if (previous == null) {
                 TenantContextHolder.clear();
@@ -130,15 +126,6 @@ public class WidgetController {
                 TenantContextHolder.set(previous);
             }
         }
-    }
-
-    /** 未知意图回退为 GENERAL（安全只读专员），不因客户端乱填意图而放开副作用工具。 */
-    private String resolveIntent(String intent) {
-        if (intent == null || intent.isBlank()) {
-            return "GENERAL";
-        }
-        var normalized = intent.trim().toUpperCase();
-        return WIDGET_ALLOWED_INTENTS.contains(normalized) ? normalized : "GENERAL";
     }
 
     private String clientIp(HttpServletRequest request) {

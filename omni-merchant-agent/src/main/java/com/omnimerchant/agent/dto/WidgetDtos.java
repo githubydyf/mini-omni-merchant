@@ -42,6 +42,7 @@ public final class WidgetDtos {
 
     /**
      * 买家对话请求。{@code tenantCode} / {@code conversationUuid} 必须与令牌一致（否则 403）。
+     * {@code intent} 仅为旧前端兼容字段，服务端始终忽略，自动识别意图。
      */
     public record WidgetChatRequest(
             String tenantCode,

@@ -3,6 +3,7 @@ package com.omnimerchant.agent.controller;
 import com.omnimerchant.agent.dto.ChatStreamEvent;
 import com.omnimerchant.agent.entity.Conversation;
 import com.omnimerchant.agent.service.ReActAgentService;
+import com.omnimerchant.agent.service.IntentClassificationService.IntentClassificationResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.scheduler.Schedulers;
@@ -36,6 +37,13 @@ public final class ChatSseSupport {
      */
     public static SseEmitter stream(ReActAgentService reActAgentService, Conversation conversation,
                                     String message, String intent, String label) {
+        return stream(reActAgentService, conversation, message, intent, label, null);
+    }
+
+    /** 买家自动分类结果随同本轮执行传递，落入同一个 AgentRun。 */
+    public static SseEmitter stream(ReActAgentService reActAgentService, Conversation conversation,
+                                    String message, String intent, String label,
+                                    IntentClassificationResult classification) {
         var emitter = new SseEmitter(SSE_TIMEOUT_MS);
         var conversationUuid = conversation.getConversationUuid();
 
@@ -46,7 +54,8 @@ public final class ChatSseSupport {
         });
         emitter.onError(error -> log.warn("{}连接异常：conv={}, error={}", label, conversationUuid, error.getMessage()));
 
-        reActAgentService.chatEvents(conversation, message, intent)
+        (classification == null ? reActAgentService.chatEvents(conversation, message, intent)
+                : reActAgentService.chatEvents(conversation, message, intent, classification))
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(
                         event -> {

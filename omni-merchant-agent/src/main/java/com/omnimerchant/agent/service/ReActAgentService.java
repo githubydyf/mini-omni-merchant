@@ -12,6 +12,7 @@ import com.omnimerchant.agent.resilience.LlmResilienceService;
 import com.omnimerchant.agent.router.ModelRouter;
 import com.omnimerchant.agent.tool.ToolCallbackScope;
 import com.omnimerchant.agent.tool.ToolExecutionMarker;
+import com.omnimerchant.agent.service.IntentClassificationService.IntentClassificationResult;
 import com.omnimerchant.tenant.context.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,11 +54,8 @@ import java.util.function.Supplier;
  * DeepSeek 组织最终中文回答
  * </pre>
  *
- * <p>本阶段相对原版去掉的能力（依赖尚未复现的模块）：
- * RedisChatMemory（多轮记忆）、ModelRouter（多模型路由）、MultiLingualEngine（多语言）、
- * SafeGuardAdvisor、TokenUsageAdvisor、CircuitBreaker、AgentTraceService、
- * AgentStateMachineService、TranslationEvidenceService、ObservationRegistry、
- * Redis 会话锁与幂等守卫。
+ * <p>复用当前模型路由、限流、记忆、轨迹、状态机及执行守卫。
+ * 买家入口先自动识别意图，再进入本链；此处只处理已经选定的意图。
  *
  * <p>当前固定使用 DeepSeek；未配置 API Key 时返回明确的“模型未配置”提示，不抛异常。
  */
@@ -142,7 +140,7 @@ public class ReActAgentService {
      *
      * @param conversationUuid 会话 UUID（用于关联 Tool 审计日志、推导 tenantId）
      * @param userMessage      用户自然语言消息
-     * @param intent           已知意图（本阶段显式传入，不做自动意图识别）
+     * @param intent           已由调用方确定的意图
      * @return 面向客户的最终中文回答
      */
     public String chat(String conversationUuid, String userMessage, String intent) {
@@ -150,7 +148,7 @@ public class ReActAgentService {
         log.info("Agent 编排：intent={}, specialist={}, allowlist={}",
                 intent, plan.specialistKey(), plan.toolAllowlist());
 
-        // 默认分流（triage）：本阶段不做自动意图识别，要求调用方显式给出已知意图。
+        // 无法确定意图时不开放工具，要求补充本轮需求。
         if (plan.toolAllowlist().isEmpty()) {
             return "当前意图暂不支持自动处理（未识别到可用意图，或该意图尚未接入处理链）。";
         }
@@ -222,6 +220,12 @@ public class ReActAgentService {
      * @param conversation 已校验可用的会话（提供真实 tenantId 与 id）
      */
     public Flux<ChatStreamEvent> chatEvents(Conversation conversation, String userMessage, String intent) {
+        return chatEvents(conversation, userMessage, intent, null);
+    }
+
+    /** 接收服务端分类结果；分类本身不在工具执行链中进行。 */
+    public Flux<ChatStreamEvent> chatEvents(Conversation conversation, String userMessage, String intent,
+                                           IntentClassificationResult classification) {
         return Flux.defer(() -> {
             // 一、先获取 Redis 会话锁：同一会话同一时刻只允许一个 Agent Run。
             // 锁获取失败（含 Redis 不可用，fail-closed）时不得启动执行，也不得创建假的成功轨迹。
@@ -239,7 +243,7 @@ public class ReActAgentService {
             // 二、用 Flux.using 管理租约生命周期：SUCCESS/FAILED/CANCELLED/TIMEOUT 都会释放锁
             return Flux.using(
                     () -> lease,
-                    heldLease -> runTurn(conversation, userMessage, intent, heldLease),
+                    heldLease -> runTurn(conversation, userMessage, intent, heldLease, classification),
                     agentExecutionGuardService::release);
         }).onErrorResume(error -> {
             // 锁冲突或锁不可用：明确告知，不进入模型与工具
@@ -260,8 +264,11 @@ public class ReActAgentService {
     /** 持锁执行一轮 Agent（锁在外层 Flux.using 中获取与释放）。 */
     private Flux<ChatStreamEvent> runTurn(Conversation conversation, String userMessage,
                                           String intent,
-                                          AgentExecutionGuardService.ConversationLease lease) {
-        return Flux.defer(() -> {
+                                          AgentExecutionGuardService.ConversationLease lease,
+                                          IntentClassificationResult classification) {
+        // 初始化中的记忆和轨迹同样访问租户表，不能依赖线程池残留的租户。
+        return Flux.defer(() -> new CallScope(conversation.getTenantId(), intent,
+                conversation.getConversationUuid()).runInScope(() -> {
             var startedAt = System.currentTimeMillis();
             var firstTokenAt = new AtomicReference<Long>(null);
             var terminal = new AtomicBoolean(false);
@@ -274,6 +281,12 @@ public class ReActAgentService {
             var traceId = agentTraceService.startChatRun(
                     conversation.getTenantId(), conversation.getConversationUuid(), intent,
                     routed.providerName(), routed.modelName(), userMessage);
+            if (classification != null) {
+                agentTraceService.addStep(traceId, "INTENT_CLASSIFICATION", "classify_intent",
+                        classification.status(), userMessage, classification.reason(), null,
+                        classification.latencyMs(), Map.of("intent", classification.intent(),
+                                "provider", classification.modelProvider(), "model", classification.modelName()));
+            }
             log.info("Agent 流式编排：traceId={}, intent={}, specialist={}, allowlist={}, provider={}, model={}",
                     traceId, intent, plan.specialistKey(), plan.toolAllowlist(),
                     routed.providerName(), routed.modelName());
@@ -288,7 +301,7 @@ public class ReActAgentService {
                 agentTraceService.failRunWithReason(traceId, "INTENT_UNSUPPORTED",
                         "当前意图暂不支持自动处理", elapsed(startedAt));
                 return Flux.just(ChatStreamEvent.error(
-                        "当前意图暂不支持自动处理（未识别到可用意图，或该意图尚未接入处理链）。"));
+                        "暂时无法确定您本轮需要的帮助，请补充具体问题或稍后重试。"));
             }
 
             // 状态机启动：NEW/可继续状态 → AI_TRIAGE → AI_WORKING
@@ -401,6 +414,7 @@ public class ReActAgentService {
             toolContext.put("conversationUuid", conversation.getConversationUuid());
             toolContext.put("traceId", traceId);
             toolContext.put("intent", intent);
+            toolContext.put("userMessage", userMessage);
             toolContext.put("allowedTools", plan.toolAllowlist());
             toolContext.put("conversationLease", lease);
 
@@ -433,7 +447,8 @@ public class ReActAgentService {
                         return ChatStreamEvent.delta(chunk);
                     });
 
-            Flux<ChatStreamEvent> finalEvent = Flux.defer(() -> {
+            // 模型信号可能切换线程；落库及轨迹收尾都必须绑定本轮租户。
+            Flux<ChatStreamEvent> finalEvent = Flux.defer(() -> scope.runInScope(() -> {
                 String finalText = buffer.toString();
                 if (finalText.isBlank()) {
                     if (terminal.compareAndSet(false, true)) {
@@ -473,10 +488,10 @@ public class ReActAgentService {
                     completeState(scope, conversation, traceId);
                 }
                 return Flux.just(ChatStreamEvent.finalAnswer(finalText));
-            });
+            }));
 
             return Flux.concat(Flux.just(ChatStreamEvent.status("PROCESSING")), deltas, finalEvent)
-                    .onErrorResume(error -> {
+                    .onErrorResume(error -> scope.runInScope(() -> {
                         log.error("流式对话失败：traceId={}, conv={}, intent={}, error={}",
                                 traceId, conversation.getConversationUuid(), intent, error.getMessage());
                         if (terminal.compareAndSet(false, true)) {
@@ -485,16 +500,17 @@ public class ReActAgentService {
                         }
                         // 明确区分限流 / 熔断 / 超时 / 其他模型故障，避免统一成模糊文案
                         return Flux.just(ChatStreamEvent.error(userFacingModelErrorMessage(error)));
-                    })
+                    }))
                     // 兜底：客户端取消等导致既未 SUCCESS 也未 FAILED 时，避免长期 RUNNING 或 AI_WORKING
-                    .doFinally(signal -> {
+                    .doFinally(signal -> scope.runInScope(() -> {
                         if (terminal.compareAndSet(false, true)) {
                             agentTraceService.failRunIfStillRunning(traceId, "CANCELLED",
                                     "客户端中断或执行未正常结束", elapsed(startedAt));
                             failState(scope, conversation, traceId, "客户端中断或执行未正常结束");
                         }
-                    });
-        });
+                        return null;
+                    }));
+        }));
     }
 
     /**

@@ -186,6 +186,8 @@ class AgentExecutionGuardServiceTest {
         map.put("conversationUuid", "conv-1");
         map.put("traceId", "trace-1");
         map.put("allowedTools", List.of(toolName));
+        map.put("intent", "requestAddressChange".equals(toolName) ? "ADDRESS_CHANGE" : "RETURN_REFUND");
+        map.put("userMessage", "请帮我提交退货退款申请，并修改收货地址");
         if (lease != null) {
             map.put("conversationLease", lease);
         }

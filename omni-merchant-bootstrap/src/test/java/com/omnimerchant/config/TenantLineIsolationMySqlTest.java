@@ -49,6 +49,8 @@ class TenantLineIsolationMySqlTest {
 
     private static HikariDataSource dataSource;
     private static SqlSessionFactory sqlSessionFactory;
+    private static Conversation ownConversation;
+    private static Conversation otherConversation;
 
     static boolean mysqlAvailable() {
         try (Connection ignored = java.sql.DriverManager.getConnection(URL, USER, PASSWORD)) {
@@ -81,11 +83,31 @@ class TenantLineIsolationMySqlTest {
         sqlSessionFactory = factoryBean.getObject();
         // 手动注册待测 Mapper（本测试未使用 Spring 的 @MapperScan）
         sqlSessionFactory.getConfiguration().addMapper(ConversationMapper.class);
+        // 自建测试会话，避免依赖已被重置的演示主键。
+        try (var session = sqlSessionFactory.openSession(true)) {
+            var lifecycle = new com.omnimerchant.agent.service.ConversationLifecycleService(
+                    session.getMapper(ConversationMapper.class));
+            TenantContextHolder.set(1001L);
+            ownConversation = lifecycle.create(1001L, "WEB", null, "租户隔离测试");
+            TenantContextHolder.set(1002L);
+            otherConversation = lifecycle.create(1002L, "WEB", null, "租户隔离测试");
+        } finally {
+            TenantContextHolder.clear();
+        }
     }
 
     @AfterAll
-    static void tearDown() {
+    static void tearDown() throws Exception {
         if (dataSource != null) {
+            // 只清理本测试创建的随机会话，主键与 UUID 同时匹配。
+            try (var connection = dataSource.getConnection();
+                 var statement = connection.prepareStatement("DELETE FROM conversation WHERE id=? AND conversation_uuid=?")) {
+                for (var conversation : java.util.List.of(ownConversation, otherConversation)) {
+                    statement.setLong(1, conversation.getId());
+                    statement.setString(2, conversation.getConversationUuid());
+                    statement.executeUpdate();
+                }
+            }
             dataSource.close();
         }
     }
@@ -97,14 +119,14 @@ class TenantLineIsolationMySqlTest {
 
     @Test
     void selectByIdMustNotReturnOtherTenantRow() {
-        // 会话 5006 属于租户 1002；在租户 1001 上下文中按主键查询必须为空
+        // 另一测试会话属于租户 1002，在租户 1001 上下文中按主键查询必须为空。
         TenantContextHolder.set(1001L);
         try (SqlSession session = sqlSessionFactory.openSession()) {
             var mapper = session.getMapper(ConversationMapper.class);
 
-            assertThat(mapper.selectById(5006L)).isNull();
+            assertThat(mapper.selectById(otherConversation.getId())).isNull();
             // 同租户主键仍然可查
-            assertThat(mapper.selectById(5001L)).isNotNull();
+            assertThat(mapper.selectById(ownConversation.getId())).isNotNull();
         }
     }
 
@@ -127,7 +149,7 @@ class TenantLineIsolationMySqlTest {
         try (SqlSession session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(ConversationMapper.class);
             var update = new LambdaUpdateWrapper<Conversation>()
-                    .eq(Conversation::getId, 5006L)
+                    .eq(Conversation::getId, otherConversation.getId())
                     .set(Conversation::getPriority, 9);
             var affected = mapper.update(null, update);
 
@@ -142,7 +164,7 @@ class TenantLineIsolationMySqlTest {
         try (SqlSession session = sqlSessionFactory.openSession(true)) {
             var mapper = session.getMapper(ConversationMapper.class);
 
-            assertThat(mapper.deleteById(5006L)).isZero();
+            assertThat(mapper.deleteById(otherConversation.getId())).isZero();
         }
     }
 
