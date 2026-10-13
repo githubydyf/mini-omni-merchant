@@ -55,17 +55,29 @@ public final class ChatSseSupport {
         return forward(Flux.just(ChatStreamEvent.error(message)), conversationUuid, label);
     }
 
+    public static SseEmitter accepted(String conversationUuid) {
+        return forward(Flux.just(new ChatStreamEvent("status", "消息已发送给人工客服")), conversationUuid, "买家人工会话");
+    }
+
     private static SseEmitter forward(Flux<ChatStreamEvent> events, String conversationUuid, String label) {
         var emitter = new SseEmitter(SSE_TIMEOUT_MS);
+        var subscription = new java.util.concurrent.atomic.AtomicReference<reactor.core.Disposable>();
+        var closed = new java.util.concurrent.atomic.AtomicBoolean(false);
+        Runnable cancel = () -> {
+            closed.set(true);
+            var disposable = subscription.get();
+            if (disposable != null) disposable.dispose();
+        };
 
-        emitter.onCompletion(() -> log.info("{}结束：conv={}", label, conversationUuid));
+        emitter.onCompletion(() -> { cancel.run(); log.info("{}结束：conv={}", label, conversationUuid); });
         emitter.onTimeout(() -> {
+            cancel.run();
             log.warn("{}超时：conv={}", label, conversationUuid);
             emitter.complete();
         });
-        emitter.onError(error -> log.warn("{}连接异常：conv={}, error={}", label, conversationUuid, error.getMessage()));
+        emitter.onError(error -> { cancel.run(); log.warn("{}连接异常：conv={}, error={}", label, conversationUuid, error.getMessage()); });
 
-        events
+        var disposable = events
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(
                         event -> {
@@ -75,6 +87,7 @@ public final class ChatSseSupport {
                                 // 客户端断开或写入失败：结束流，取消上游订阅
                                 log.warn("{}发送失败（客户端可能已断开）：conv={}, error={}",
                                         label, conversationUuid, e.getMessage());
+                                cancel.run();
                                 emitter.completeWithError(e);
                             }
                         },
@@ -93,6 +106,9 @@ public final class ChatSseSupport {
                             log.info("{}完成：conv={}", label, conversationUuid);
                         }
                 );
+        subscription.set(disposable);
+        // 即时完成或连接关闭可能先于订阅赋值，仍须释放上游模型与会话资源。
+        if (closed.get()) disposable.dispose();
         return emitter;
     }
 

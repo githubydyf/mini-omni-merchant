@@ -22,12 +22,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * 统一收件箱（Inbox）+ 工单（Ticket）业务服务。
@@ -51,6 +49,7 @@ public class CommercialOpsService {
     private final ChatMessageMapper chatMessageMapper;
     private final TicketMapper ticketMapper;
     private final CommerceApprovalService commerceApprovalService;
+    private final ChatMessagePersistenceService messagePersistence;
 
     // ==================================================================
     // 队列：基于 conversation.status 生成，不新建 inbox_queue 表。
@@ -149,8 +148,8 @@ public class CommercialOpsService {
     // ==================================================================
     @Transactional
     public HelpdeskDtos.InboxWorkItemVO takeover(String conversationUuid, HelpdeskDtos.TakeoverRequest request) {
-        var conversation = requireConversation(conversationUuid);
-        if (Integer.valueOf(5).equals(conversation.getStatus())) {
+        var conversation = lockConversation(conversationUuid);
+        if (Integer.valueOf(6).equals(conversation.getStatus()) || Integer.valueOf(5).equals(conversation.getStatus())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "已关闭会话不能接管");
         }
         conversation.setStatus(4);
@@ -168,7 +167,7 @@ public class CommercialOpsService {
     // ==================================================================
     @Transactional
     public HelpdeskDtos.InboxWorkItemVO humanReply(String conversationUuid, HelpdeskDtos.HumanReplyRequest request) {
-        var conversation = requireConversation(conversationUuid);
+        var conversation = lockConversation(conversationUuid);
         if (request == null || request.message() == null || request.message().isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "人工回复不能为空");
         }
@@ -177,34 +176,22 @@ public class CommercialOpsService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "请先接管会话后再回复");
         }
         var actorId = requireActor();
-        conversation.setHumanAgentId(actorId);
-        var seq = chatMessageMapper.selectCount(new LambdaQueryWrapper<ChatMessage>()
-                .eq(ChatMessage::getConversationUuid, conversationUuid)).intValue() + 1;
-        var message = new ChatMessage();
-        message.setTenantId(conversation.getTenantId());
-        message.setConversationId(conversation.getId());
-        message.setConversationUuid(conversationUuid);
-        message.setMessageUuid(UUID.randomUUID().toString());
-        message.setRole("assistant");
-        message.setSeqNo(seq);
-        message.setContent(request.message().trim());
-        message.setContentType("TEXT");
-        message.setOriginalLang(conversation.getLanguage());
-        message.setPromptTokens(0);
-        message.setCompletionTokens(0);
-        message.setTotalTokens(0);
-        message.setCostUsd(BigDecimal.ZERO);
-        message.setIsStreamed(0);
-        chatMessageMapper.insert(message);
-        conversation.setMessageCount((conversation.getMessageCount() == null ? 0 : conversation.getMessageCount()) + 1);
-        conversation.setLastMessageAt(LocalDateTime.now());
+        if (!actorId.equals(conversation.getHumanAgentId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "请由已接管会话的客服回复");
+        }
+        if (request.message().length() > 2000) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "人工回复长度不能超过 2000 字符");
+        }
+        messagePersistence.saveHumanMessage(conversation, request.message().trim(), actorId);
+        // 再读锁内计数，避免旧实体覆盖统一持久化服务的原子更新。
+        conversation = lockConversation(conversationUuid);
         if (Boolean.TRUE.equals(request.closeAfterReply())) {
             conversation.setStatus(5);
             conversation.setResolved(1);
             conversation.setEndedAt(LocalDateTime.now());
             conversation.setDurationSeconds(durationSeconds(conversation.getStartedAt(), conversation.getEndedAt()));
         } else {
-            conversation.setStatus(2);
+            conversation.setStatus(4);
         }
         conversationMapper.updateById(conversation);
         return toInboxItem(conversation);
@@ -301,7 +288,7 @@ public class CommercialOpsService {
                 message.getSeqNo(), message.getContent(), message.getContentType(), message.getOriginalLang(),
                 message.getDetectionConfidence(), message.getTranslatedContent(), message.getTranslationProvider(),
                 message.getTranslationStatus(), message.getTranslationLatencyMs(), message.getTranslationFallbackReason(),
-                message.getToolName(), message.getCreatedAt());
+                message.getToolName(), message.getCreatedAt(), message.getSource(), message.getSenderId());
     }
 
     private HelpdeskDtos.InboxCustomerContextVO toInboxCustomerContextVO(Customer customer) {
@@ -344,6 +331,13 @@ public class CommercialOpsService {
 
     private long queueCount(List<Conversation> conversations, String queue) {
         return conversations.stream().filter(c -> conversationMatchesQueue(c, queue)).count();
+    }
+
+    private Conversation lockConversation(String uuid) {
+        var row = conversationMapper.selectOne(new LambdaQueryWrapper<Conversation>()
+                .eq(Conversation::getConversationUuid, uuid).last("LIMIT 1 FOR UPDATE"));
+        if (row == null) throw new BusinessException(ErrorCode.NOT_FOUND, "会话不存在");
+        return row;
     }
 
     private Conversation requireConversation(String conversationUuid) {

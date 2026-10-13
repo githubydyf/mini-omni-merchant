@@ -50,4 +50,11 @@ public final class WidgetDtos {
             String message,
             String intent) {
     }
+
+    /** 只包含买家可见内容，不返回工具、操作人及模型内部信息。 */
+    public record WidgetMessage(String messageUuid, Integer seqNo, String role, String content,
+                                java.time.LocalDateTime createdAt, String source) {}
+
+    public record WidgetMessagesResponse(java.util.List<WidgetMessage> messages, boolean hasMore,
+                                         Integer conversationStatus) {}
 }

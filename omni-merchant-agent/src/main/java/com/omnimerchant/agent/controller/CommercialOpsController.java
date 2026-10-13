@@ -4,6 +4,8 @@ import com.omnimerchant.agent.dto.HelpdeskDtos;
 import com.omnimerchant.agent.service.CommerceApprovalService;
 import com.omnimerchant.agent.service.CommercePlatformService;
 import com.omnimerchant.agent.service.CommercialOpsService;
+import com.omnimerchant.agent.service.CommerceActionExecutionService;
+import com.omnimerchant.agent.service.CommerceLocalRequestService;
 import com.omnimerchant.common.dto.R;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -37,6 +39,8 @@ public class CommercialOpsController {
     private final CommercialOpsService service;
     private final CommerceApprovalService approvalService;
     private final CommercePlatformService commerceService;
+    private final CommerceActionExecutionService executionService;
+    private final CommerceLocalRequestService localRequestService;
 
     @GetMapping("/inbox/queues")
     @PreAuthorize("@tenantAuthorization.hasPermission('inbox:reply')")
@@ -124,5 +128,23 @@ public class CommercialOpsController {
                              @PathVariable Long id,
                              @RequestBody(required = false) HelpdeskDtos.ActionDecisionRequest request) {
         return R.ok(approvalService.reject(source, id, request));
+    }
+
+    @PostMapping("/actions/{source}/{id}/execute")
+    @PreAuthorize("@tenantAuthorization.hasPermission('action:execute')")
+    public R<?> executeAction(@PathVariable String source, @PathVariable Long id) {
+        return R.ok(executionService.execute(source, id));
+    }
+
+    @GetMapping("/actions/{source}/{id}/history")
+    @PreAuthorize("@tenantAuthorization.hasPermission('action:approve')")
+    public R<?> actionHistory(@PathVariable String source, @PathVariable Long id) {
+        return R.ok(executionService.history(source, id));
+    }
+
+    @PostMapping("/actions/local-requests")
+    @PreAuthorize("@tenantAuthorization.hasPermission('action:approve')")
+    public R<?> createLocalAction(@RequestBody HelpdeskDtos.LocalActionCreate input) {
+        return R.ok(localRequestService.create(input));
     }
 }

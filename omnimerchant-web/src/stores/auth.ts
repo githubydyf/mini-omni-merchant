@@ -141,6 +141,7 @@ export const useAuthStore = defineStore('auth', () => {
     email,
     userId,
     roles,
+    claims,
     tenantIds,
     platformAdmin,
     isLoggedIn,

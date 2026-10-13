@@ -52,13 +52,14 @@ class WidgetIntentRoutingTest {
     void setUp() {
         controller = new WidgetController(mock(WidgetSessionService.class), lifecycle, persistence,
                 memory, classifier, trace, agent, new ObjectMapper());
+        conversation.setStatus(1);
         conversation.setTenantId(1001L);
         conversation.setConversationUuid("买家测试会话");
         httpRequest.setAttribute(Constants.ATTR_WIDGET_PRINCIPAL,
                 new WidgetCustomerPrincipal("买家测试身份", 1001L, "OM-1001", "买家测试会话",
                         java.util.Set.of(1001L), "测试令牌", new java.util.Date(System.currentTimeMillis() + 60000)));
-        when(lifecycle.requireForAi("买家测试会话", 1001L)).thenReturn(conversation);
-        when(persistence.saveUserMessage(eq(conversation), anyString(), isNull())).thenReturn(new ChatMessage());
+        when(lifecycle.requireForRead("买家测试会话", 1001L)).thenReturn(conversation);
+        when(persistence.saveWidgetUserMessage(eq(conversation), anyString())).thenReturn(new ChatMessage());
         when(trace.startChatRun(anyLong(), anyString(), isNull(), anyString(), anyString(), anyString())).thenReturn("分类失败测试轨迹");
         when(agent.chatEvents(eq(conversation), anyString(), anyString(), any())).thenReturn(Flux.just(ChatStreamEvent.finalAnswer("中文测试回复")));
     }
@@ -67,6 +68,15 @@ class WidgetIntentRoutingTest {
     void cleanUp() {
         TenantContextHolder.clear();
         GuardOutcomeHolder.clear();
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 4})
+    void humanConversationOnlyPersistsBuyerMessage(int status) throws Exception {
+        conversation.setStatus(status);
+        controller.chatStream(new WidgetDtos.WidgetChatRequest("OM-1001", "买家测试会话", "继续向人工补充", null), httpRequest, httpResponse);
+        verify(persistence).saveWidgetUserMessage(conversation, "继续向人工补充");
+        verifyNoInteractions(memory, classifier, agent, trace);
     }
 
     @DisplayName("买家伪造高风险 Intent 被忽略，消息先保存再分类")
@@ -81,8 +91,8 @@ class WidgetIntentRoutingTest {
         controller.chatStream(new WidgetDtos.WidgetChatRequest("OM-1001", "买家测试会话",
                 "我可以申请退款吗？", "RETURN_REFUND"), httpRequest, httpResponse);
         var order = inOrder(lifecycle, persistence, memory, classifier, agent);
-        order.verify(lifecycle).requireForAi("买家测试会话", 1001L);
-        order.verify(persistence).saveUserMessage(conversation, "我可以申请退款吗？", null);
+        order.verify(lifecycle).requireForRead("买家测试会话", 1001L);
+        order.verify(persistence).saveWidgetUserMessage(conversation, "我可以申请退款吗？");
         order.verify(memory).syncUserMessage(eq(conversation), any());
         order.verify(classifier).classify(conversation, "我可以申请退款吗？");
         order.verify(persistence).updateIntent(conversation, "POLICY_QA");
@@ -135,7 +145,7 @@ class WidgetIntentRoutingTest {
         var sse = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(response))
                 .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         assertThat(sse).contains("event:error", category).doesNotContain("event:final", "INTENT_UNSUPPORTED");
-        verify(persistence).saveUserMessage(conversation, message, null);
+        verify(persistence).saveWidgetUserMessage(conversation, message);
         verify(persistence, never()).updateIntent(any(), any());
         verify(persistence, never()).saveAssistantMessage(any(), anyString(), anyString(), anyInt());
         verify(trace).recordIntentClassification("分类失败测试轨迹", message, classification);
@@ -154,7 +164,7 @@ class WidgetIntentRoutingTest {
     @DisplayName("会话校验失败时分类器不能读取其他租户历史")
     @Test
     void conversationMismatchStopsBeforeClassification() {
-        when(lifecycle.requireForAi(anyString(), anyLong())).thenThrow(new SecurityException("会话租户不匹配"));
+        when(lifecycle.requireForRead(anyString(), anyLong())).thenThrow(new SecurityException("会话租户不匹配"));
         assertThatThrownBy(() -> controller.chatStream(new WidgetDtos.WidgetChatRequest("OM-1001", "买家测试会话", "你好", null), httpRequest, httpResponse))
                 .isInstanceOf(SecurityException.class);
         verifyNoInteractions(persistence, memory, classifier, agent);

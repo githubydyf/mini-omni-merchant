@@ -1,0 +1,14 @@
+{
+  "omni-merchant-agent": {
+    "tests": 273,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "omni-merchant-bootstrap": {
+    "tests": 50,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+}

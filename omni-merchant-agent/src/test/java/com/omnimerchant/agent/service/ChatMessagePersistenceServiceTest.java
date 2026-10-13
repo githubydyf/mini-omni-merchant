@@ -63,6 +63,7 @@ class ChatMessagePersistenceServiceTest {
 
         assertThat(saved.getSeqNo()).isEqualTo(1);
         assertThat(saved.getRole()).isEqualTo("user");
+        assertThat(saved.getSource()).isEqualTo("USER");
         assertThat(saved.getMessageUuid()).isNotBlank();
         assertThat(saved.getTenantId()).isEqualTo(1001L);
         assertThat(saved.getConversationId()).isEqualTo(10L);
@@ -79,6 +80,7 @@ class ChatMessagePersistenceServiceTest {
 
         assertThat(saved.getSeqNo()).isEqualTo(8);
         assertThat(saved.getRole()).isEqualTo("assistant");
+        assertThat(saved.getSource()).isEqualTo("AI");
         assertThat(saved.getIsStreamed()).isEqualTo(1);
         assertThat(saved.getModelName()).isEqualTo("deepseek-flash");
         assertThat(saved.getLatencyMs()).isEqualTo(120);
@@ -115,5 +117,32 @@ class ChatMessagePersistenceServiceTest {
                 .map(w -> String.valueOf(w.getSqlSet()))
                 .toList());
         assertThat(allSqlSet).contains("message_count = message_count + 1");
+    }
+
+    @Test
+    void humanReplyStoresActorAndNeverClaimsModelProvider() {
+        var conversation = conversation();
+        conversation.setStatus(4);
+        conversation.setHumanAgentId(42L);
+        when(conversationMapper.selectOne(any())).thenReturn(conversation);
+        var saved = service.saveHumanMessage(conversation, "人工回复", 42L);
+        assertThat(saved.getSource()).isEqualTo("HUMAN");
+        assertThat(saved.getSenderId()).isEqualTo(42L);
+        assertThat(saved.getModelProvider()).isNull();
+        assertThat(saved.getIsStreamed()).isZero();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.saveHumanMessage(conversation, "他人回复", 43L))
+                .isInstanceOf(com.omnimerchant.common.exception.BusinessException.class);
+        verify(messageMapper, times(1)).insert(any(ChatMessage.class));
+    }
+
+    @Test
+    void lateAiReplyIsRefusedAfterHumanTakeover() {
+        var conversation = conversation();
+        conversation.setStatus(4);
+        conversation.setHumanAgentId(42L);
+        when(conversationMapper.selectOne(any())).thenReturn(conversation);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.saveAssistantMessage(conversation, "迟到的模型回复", "测试模型", 1))
+                .isInstanceOf(com.omnimerchant.common.exception.BusinessException.class);
+        verify(messageMapper, org.mockito.Mockito.never()).insert(any(ChatMessage.class));
     }
 }

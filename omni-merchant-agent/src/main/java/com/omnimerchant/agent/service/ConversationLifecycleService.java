@@ -27,9 +27,10 @@ import java.util.UUID;
  * 5 已关闭       6 已超时       → AI 不得继续回复
  * </pre>
  *
- * <p><b>身份说明（开发阶段）</b>：当前未复现鉴权，请求可携带的 {@code X-Tenant-Id}
- * 仅作为一致性校验，<b>不作为可信身份</b>。以数据库会话行上的 {@code tenantId}
- * 为权威租户来源（Tool 执行使用该值），避免用户伪造租户越权。
+ * <p><b>身份边界</b>：买家入口只信任经验证的 Widget 令牌租户。
+ * 读取会话仍校验数据库归属；是否可发送由持久化事务在会话锁内判断。
+ * 人工会话允许买家消息入库，关闭会话仅允许读取历史。
+
  */
 @Slf4j
 @Service
@@ -84,9 +85,19 @@ public class ConversationLifecycleService {
     /**
      * 按 UUID 取会话并校验 AI 是否可回复。
      *
-     * @param requestedTenantId 请求携带的租户（开发阶段可空）；非空且与库中不一致时拒绝
+     * @param requestedTenantId 经过认证的租户；与库中不一致时拒绝
      */
     public Conversation requireForAi(String conversationUuid, Long requestedTenantId) {
+        var conversation = requireForRead(conversationUuid, requestedTenantId);
+        var status = conversation.getStatus();
+        if (status == null || !AI_ELIGIBLE_STATUS.contains(status) || conversation.getHumanAgentId() != null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "当前会话已由人工接管或已关闭，AI 不再继续回复");
+        }
+        return conversation;
+    }
+
+    /** 有效买家令牌可读取关闭会话；发送资格由持久化事务再次检查。 */
+    public Conversation requireForRead(String conversationUuid, Long requestedTenantId) {
         if (conversationUuid == null || conversationUuid.isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少 conversationUuid");
         }
@@ -98,10 +109,6 @@ public class ConversationLifecycleService {
         }
         if (requestedTenantId != null && !requestedTenantId.equals(conversation.getTenantId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "租户与会话不一致，拒绝处理");
-        }
-        var status = conversation.getStatus();
-        if (status == null || !AI_ELIGIBLE_STATUS.contains(status)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "当前会话已由人工接管或已关闭，AI 不再继续回复");
         }
         return conversation;
     }

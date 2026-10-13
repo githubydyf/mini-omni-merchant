@@ -34,7 +34,7 @@ import java.util.List;
  *
  * <p>相对原项目的取舍：
  * <ul>
- *   <li>去掉 {@code SupportAuditService} 调用（审计模块尚未复现），保留 TODO。</li>
+ *   <li>审批事件写入独立的 {@code commerce_action_record}，保留真实操作人与决策说明。</li>
  *   <li>审批<b>只改内部状态</b>，绝不调用 Shopify 等外部写操作；策略
  *       {@code externalWriteEnabled} 恒为 0。</li>
  * </ul>
@@ -60,6 +60,7 @@ public class CommerceApprovalService {
     private final CommerceActionPolicyMapper actionPolicyMapper;
     private final ReturnRequestMapper returnRequestMapper;
     private final CommerceActionRequestMapper actionRequestMapper;
+    private final CommerceActionAuditService auditService;
 
     public List<HelpdeskDtos.CommerceActionPolicyVO> policies() {
         return actionPolicyMapper.selectList(new LambdaQueryWrapper<CommerceActionPolicy>()
@@ -77,7 +78,7 @@ public class CommerceApprovalService {
                         .orderByDesc(CommerceActionRequest::getCreatedAt).last("LIMIT 500"))
                 .stream().map(this::toActionView).forEach(records::add);
         var filtered = records.stream()
-                .filter(row -> status == null || status.isBlank() || status.equalsIgnoreCase(row.status()))
+                .filter(row -> status == null || status.isBlank() || matchesStatus(status, row.status()))
                 .sorted(Comparator.comparing(HelpdeskDtos.ActionRequestVO::createdAt,
                         Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
@@ -126,21 +127,25 @@ public class CommerceApprovalService {
         var actorId = requireActor();
         if ("return_request".equals(source)) {
             var row = requireReturn(id);
+            requirePending(row.getStatus() == null ? "" : String.valueOf(row.getStatus()));
             row.setStatus(3);                       // 3 = approved（见类注释的状态定案）
             row.setResolution("APPROVED_MANUAL");
             row.setResolutionNote(request == null ? null : request.note());
-            returnRequestMapper.updateById(row);
-            // TODO 审计模块复现后，恢复 supportAuditService.record(...)
+            if (returnRequestMapper.updateById(row) != 1) throw new BusinessException(ErrorCode.BAD_REQUEST, "审批更新失败");
+            auditService.record(source, id, row.getRequestType(), Integer.valueOf(3).equals(row.getStatus()) ? "APPROVED" : "REJECTED",
+                    row.getResolution(), null, request == null ? null : request.note(), null, null);
             return toReturnView(row);
         }
         if ("commerce_action_request".equals(source)) {
             var row = requireAction(id);
+            requirePending(row.getStatus());
             row.setStatus("APPROVED_MANUAL");
             row.setApprovedBy(actorId);
             row.setApprovedAt(LocalDateTime.now());
-            row.setExternalResult("Manual approval recorded; no external ecommerce write was executed by AI.");
-            actionRequestMapper.updateById(row);
-            // TODO 审计模块复现后，恢复 supportAuditService.record(...)
+            row.setExternalResult("人工审批已通过，等待执行或人工处理；尚未执行退款、补发或订单修改。");
+            if (actionRequestMapper.updateById(row) != 1) throw new BusinessException(ErrorCode.BAD_REQUEST, "审批更新失败");
+            auditService.record(source, id, row.getActionType(), "APPROVED_MANUAL".equals(row.getStatus()) ? "APPROVED" : "REJECTED",
+                    row.getStatus(), null, request == null ? null : request.note(), null, null);
             return toActionView(row);
         }
         // 只允许两个已知来源，避免 source 传错时静默落到另一张表上误改数据。
@@ -152,19 +157,23 @@ public class CommerceApprovalService {
         requireActor();
         if ("return_request".equals(source)) {
             var row = requireReturn(id);
+            requirePending(row.getStatus() == null ? "" : String.valueOf(row.getStatus()));
             row.setStatus(4);                       // 4 = rejected（见类注释的状态定案）
             row.setResolution("REJECTED");
             row.setResolutionNote(request == null ? null : request.note());
-            returnRequestMapper.updateById(row);
-            // TODO 审计模块复现后，恢复 supportAuditService.record(...)
+            if (returnRequestMapper.updateById(row) != 1) throw new BusinessException(ErrorCode.BAD_REQUEST, "审批更新失败");
+            auditService.record(source, id, row.getRequestType(), Integer.valueOf(3).equals(row.getStatus()) ? "APPROVED" : "REJECTED",
+                    row.getResolution(), null, request == null ? null : request.note(), null, null);
             return toReturnView(row);
         }
         if ("commerce_action_request".equals(source)) {
             var row = requireAction(id);
+            requirePending(row.getStatus());
             row.setStatus("REJECTED");
             row.setExternalResult(request == null ? null : request.note());
-            actionRequestMapper.updateById(row);
-            // TODO 审计模块复现后，恢复 supportAuditService.record(...)
+            if (actionRequestMapper.updateById(row) != 1) throw new BusinessException(ErrorCode.BAD_REQUEST, "审批更新失败");
+            auditService.record(source, id, row.getActionType(), "APPROVED_MANUAL".equals(row.getStatus()) ? "APPROVED" : "REJECTED",
+                    row.getStatus(), null, request == null ? null : request.note(), null, null);
             return toActionView(row);
         }
         throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的审批来源: " + source);
@@ -175,14 +184,31 @@ public class CommerceApprovalService {
                 String.valueOf(row.getStatus()), returnStatusLabel(row.getStatus()), row.getExternalOrderNumber(),
                 row.getCustomerEmail(), row.getAmount() == null ? null : row.getAmount().toPlainString(), row.getCurrency(),
                 row.getApprovalRequiredReason(), row.getRequestedItems(), row.getResolution(), row.getResolutionNote(),
-                row.getCreatedAt(), row.getUpdatedAt());
+                row.getCreatedAt(), row.getUpdatedAt(), executionState("return_request", row.getId(), row.getRequestType(), Integer.valueOf(3).equals(row.getStatus()), Integer.valueOf(5).equals(row.getStatus())));
     }
 
     private HelpdeskDtos.ActionRequestVO toActionView(CommerceActionRequest row) {
         return new HelpdeskDtos.ActionRequestVO("commerce_action_request", row.getId(), row.getRequestNo(), row.getActionType(),
                 row.getStatus(), actionStatusLabel(row.getStatus()), row.getExternalOrderNumber(), row.getCustomerEmail(),
                 null, null, row.getRiskReason(), row.getRequestedPayload(), row.getExternalResult(), null,
-                row.getCreatedAt(), row.getUpdatedAt());
+                row.getCreatedAt(), row.getUpdatedAt(), executionState("commerce_action_request", row.getId(), row.getActionType(), "APPROVED_MANUAL".equals(row.getStatus()), "EXECUTED".equals(row.getStatus())));
+    }
+
+    private HelpdeskDtos.ActionExecutionVO executionState(String source, Long id, String type, boolean approved, boolean legacyDone) {
+        var attempt = auditService.latestAttempt(source, id);
+        if (attempt != null) {
+            return new HelpdeskDtos.ActionExecutionVO(attempt.getState(), attempt.getNote(),
+                    approved && !"EXECUTED".equals(attempt.getState()) && List.of("CANCEL_ORDER", "ADDRESS_CHANGE").contains(type));
+        }
+        if (legacyDone) return new HelpdeskDtos.ActionExecutionVO("LEGACY_UNKNOWN", "历史完成记录，未提供可靠执行凭据", false);
+        if (!approved) return new HelpdeskDtos.ActionExecutionVO("NOT_APPROVED", "尚未批准执行", false);
+        return switch (type) {
+            case "CANCEL_ORDER", "ADDRESS_CHANGE" -> new HelpdeskDtos.ActionExecutionVO("PENDING_EXECUTION", "已批准，待本地执行", true);
+            case "RETURN" -> new HelpdeskDtos.ActionExecutionVO("WAITING_RETURN", "已批准退货，等待客户寄回及商家验收；尚未退款", false);
+            case "REFUND" -> new HelpdeskDtos.ActionExecutionVO("MANUAL_PENDING", "已批准，等待人工退款处理；未执行支付退款", false);
+            case "REPLACEMENT" -> new HelpdeskDtos.ActionExecutionVO("MANUAL_PENDING", "已批准，等待人工安排补发；尚未发货", false);
+            default -> new HelpdeskDtos.ActionExecutionVO("MANUAL_PENDING", "已批准，等待人工处理", false);
+        };
     }
 
     private HelpdeskDtos.CommerceActionPolicyVO toPolicyView(CommerceActionPolicy policy) {
@@ -193,7 +219,7 @@ public class CommerceApprovalService {
     }
 
     private ReturnRequest requireReturn(Long id) {
-        var row = returnRequestMapper.selectById(id);
+        var row = returnRequestMapper.selectOne(new LambdaQueryWrapper<ReturnRequest>().eq(ReturnRequest::getId, id).last("FOR UPDATE"));
         if (row == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "审批请求不存在");
         }
@@ -201,11 +227,17 @@ public class CommerceApprovalService {
     }
 
     private CommerceActionRequest requireAction(Long id) {
-        var row = actionRequestMapper.selectById(id);
+        var row = actionRequestMapper.selectOne(new LambdaQueryWrapper<CommerceActionRequest>().eq(CommerceActionRequest::getId, id).last("FOR UPDATE"));
         if (row == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "审批请求不存在");
         }
         return row;
+    }
+
+    private void requirePending(String status) {
+        if (!List.of("1", "2", "PENDING_APPROVAL", "REQUESTED", "NEEDS_APPROVAL").contains(status)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "申请已审批或已执行，不能重复改变审批结果");
+        }
     }
 
     private Long requireActor() {
@@ -235,6 +267,17 @@ public class CommerceApprovalService {
             case "EXECUTED" -> "已执行";
             case "FAILED" -> "执行失败";
             default -> "待人工审批";
+        };
+    }
+
+    private boolean matchesStatus(String filter, String status) {
+        if (filter.equalsIgnoreCase(status)) return true;
+        return switch (filter) {
+            case "1" -> List.of("PENDING_APPROVAL", "REQUESTED", "NEEDS_APPROVAL").contains(status);
+            case "3" -> "APPROVED_MANUAL".equals(status);
+            case "4" -> "REJECTED".equals(status);
+            case "5" -> "EXECUTED".equals(status);
+            default -> false;
         };
     }
 

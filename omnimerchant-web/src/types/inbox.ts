@@ -6,6 +6,7 @@ export interface QueueBucket {
 }
 
 export interface InboxWorkItem {
+  humanAgentId?: number;
   sourceType?: string;
   ticketId?: number;
   conversationUuid?: string;
@@ -31,6 +32,8 @@ export interface InboxWorkItem {
 }
 
 export interface InboxMessage {
+  source?: string;
+  senderId?: number;
   id?: number;
   messageUuid: string;
   role: string;

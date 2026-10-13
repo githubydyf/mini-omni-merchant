@@ -35,7 +35,7 @@ public final class CurrentActor {
         return principal() != null;
     }
 
-    private static JwtPrincipal principal() {
+    public static JwtPrincipal principal() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof JwtPrincipal principal) {
             return principal;

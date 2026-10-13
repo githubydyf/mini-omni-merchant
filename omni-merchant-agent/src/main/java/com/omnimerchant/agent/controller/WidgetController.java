@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -67,6 +69,30 @@ public class WidgetController {
         return R.ok(response);
     }
 
+    @GetMapping("/messages")
+    public R<WidgetDtos.WidgetMessagesResponse> messages(@RequestParam String conversationUuid,
+            @RequestParam(defaultValue = "0") int afterSeqNo, HttpServletRequest request,
+            HttpServletResponse response) throws IOException {
+        var principal = (WidgetCustomerPrincipal) request.getAttribute(Constants.ATTR_WIDGET_PRINCIPAL);
+        if (principal == null) {
+            writeError(response, 401, ErrorCode.UNAUTHORIZED, "缺少或无效的买家会话令牌");
+            return null;
+        }
+        if (!Objects.equals(principal.conversationUuid(), conversationUuid)) {
+            writeError(response, 403, ErrorCode.FORBIDDEN, "会话令牌与当前会话不匹配");
+            return null;
+        }
+        var previous = TenantContextHolder.get();
+        TenantContextHolder.set(principal.tenantId());
+        try {
+            var conversation = conversationLifecycleService.requireForRead(conversationUuid, principal.tenantId());
+            return R.ok(chatMessagePersistenceService.widgetMessages(conversation, afterSeqNo));
+        } finally {
+            if (previous == null) TenantContextHolder.clear();
+            else TenantContextHolder.set(previous);
+        }
+    }
+
     /** 买家流式对话（需要 Widget 令牌）。 */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@RequestBody WidgetDtos.WidgetChatRequest request,
@@ -105,11 +131,14 @@ public class WidgetController {
         var previous = TenantContextHolder.get();
         TenantContextHolder.set(principal.tenantId());
         try {
-            var conversation = conversationLifecycleService.requireForAi(
+            var conversation = conversationLifecycleService.requireForRead(
                     request.conversationUuid(), principal.tenantId());
             // 3. 分类前先持久化用户消息；兼容旧请求字段，但不信任买家传入的 intent。
-            var savedUserMessage = chatMessagePersistenceService.saveUserMessage(
-                    conversation, request.message(), null);
+            var savedUserMessage = chatMessagePersistenceService.saveWidgetUserMessage(conversation, request.message());
+            if (java.util.Set.of(3, 4).contains(conversation.getStatus()) || conversation.getHumanAgentId() != null) {
+                // 人工会话只写入买家消息，不分类、不调用模型、不产生虚假的助手回复。
+                return ChatSseSupport.accepted(conversation.getConversationUuid());
+            }
             conversationMemoryService.syncUserMessage(conversation, savedUserMessage);
             var classification = intentClassificationService.classify(conversation, request.message());
             if (classification.failed()) {
@@ -128,6 +157,7 @@ public class WidgetController {
                 return ChatSseSupport.error(classification.failureReason(), conversation.getConversationUuid(), "Widget");
             }
             chatMessagePersistenceService.updateIntent(conversation, classification.intent());
+            conversationLifecycleService.requireForAi(request.conversationUuid(), principal.tenantId());
 
             log.info("Widget 对话开始：tenantId={}, conversationUuid={}",
                     principal.tenantId(), request.conversationUuid());

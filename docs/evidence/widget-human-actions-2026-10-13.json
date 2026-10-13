@@ -1,0 +1,32 @@
+{
+  "conversationUuid": "cae46527-75f5-452e-a198-d6fde15bd2d8",
+  "aiRunsBeforeAndAfterHandoff": 1,
+  "messageCount": 6,
+  "sources": [
+    "USER",
+    "AI",
+    "HUMAN",
+    "USER",
+    "USER",
+    "HUMAN"
+  ],
+  "refundApprovalWithoutPayment": true,
+  "executionEvidence": [
+    {
+      "requestId": 8177,
+      "type": "CANCEL_ORDER",
+      "zip": null,
+      "order": "cancelled",
+      "payment": "paid",
+      "version": 1
+    },
+    {
+      "requestId": 8178,
+      "type": "ADDRESS_CHANGE",
+      "zip": "100000",
+      "order": "paid",
+      "payment": "paid",
+      "version": 1
+    }
+  ]
+}

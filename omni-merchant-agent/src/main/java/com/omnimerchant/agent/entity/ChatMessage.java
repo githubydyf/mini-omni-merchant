@@ -17,6 +17,8 @@ public class ChatMessage {
     private Long conversationId;
     private Long tenantId;
     private String role;
+    private String source;
+    private Long senderId;
     private Integer seqNo;
     private String content;
     private String contentType;

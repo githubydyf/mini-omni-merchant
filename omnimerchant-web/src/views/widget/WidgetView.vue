@@ -22,22 +22,26 @@
 
       <div v-else class="chat">
         <div ref="messagesEl" class="messages">
-          <div v-for="(msg, index) in messages" :key="index" class="msg" :class="msg.role">
-            <div class="msg-body" v-html="render(msg.text)"></div>
+          <div v-for="msg in messages" :key="msg.messageUuid" class="msg" :class="msg.role">
+            <small class="message-source">{{ sourceLabel(msg) }}</small>
+            <div class="msg-body" v-html="render(msg.content)"></div>
           </div>
-          <div v-if="streaming" class="msg assistant">
+          <div v-if="streaming && streamText && !persistedAi && !humanMode && !closed" class="msg assistant">
+            <small class="message-source">AI 客服</small>
             <div class="msg-body" v-html="render(streamText || '正在回复...')"></div>
           </div>
         </div>
+        <div v-if="syncNotice" class="sync-notice">{{ syncNotice }}</div>
         <div class="composer">
           <a-input-search
             v-model:value="input"
             enter-button="发送"
             placeholder="请输入你的问题"
-            :disabled="streaming"
+            :disabled="streaming || closed"
             :loading="streaming"
             @search="send()"
           />
+          <a-button v-if="closed" block @click="resetSession">会话已关闭，开始新的咨询</a-button>
         </div>
       </div>
     </section>
@@ -45,179 +49,188 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { consumeSse } from '@/utils/sse'
 import { renderSafeMarkdown } from '@/utils/markdown'
 import type { WidgetSession } from '@/types/contracts'
 
-const tenantCode = ref('')
-const customerEmail = ref('')
-const customerName = ref('')
+type WidgetMessage = { messageUuid: string; seqNo: number; role: string; source?: string; content: string; createdAt?: string }
+const CACHE_KEY = 'omni_widget_session'
+const tenantCode = ref(''), customerEmail = ref(''), customerName = ref('')
 const session = ref<WidgetSession | null>(null)
 const customerSessionToken = ref('')
-const connected = ref(false)
-const starting = ref(false)
-const streaming = ref(false)
-const input = ref('')
-const streamText = ref('')
-const messages = ref<{ role: string; text: string }[]>([])
+const connected = ref(false), starting = ref(false), streaming = ref(false), closed = ref(false)
+const input = ref(''), streamText = ref(''), syncNotice = ref('')
+const persistedAi = ref(false), humanMode = ref(false)
+let sentAfterSeq = 0, sendWasHuman = false, handoffDuringSend = false
+const messages = ref<WidgetMessage[]>([])
 const messagesEl = ref<HTMLElement>()
-
-const statusText = computed(() => {
-  if (streaming.value) return '回复中'
-  if (connected.value) return '已连接'
-  return '未连接'
-})
-
-const statusColor = computed(() => {
-  if (streaming.value) return 'gold'
-  return connected.value ? 'green' : 'default'
-})
-
-function render(text: string) {
-  return renderSafeMarkdown(text || '')
+let cursor = 0, epoch = 0, disposed = false
+let timer: ReturnType<typeof setTimeout> | undefined
+let queryAbort: AbortController | undefined, sendAbort: AbortController | undefined
+let polling: Promise<void> | undefined
+const statusText = computed(() => closed.value ? '会话已关闭' : streaming.value ? '回复中' : connected.value ? '已连接' : '未连接')
+const statusColor = computed(() => closed.value ? 'default' : streaming.value ? 'gold' : connected.value ? 'green' : 'default')
+function render(text: string) { return renderSafeMarkdown(text || '') }
+function sourceLabel(msg: WidgetMessage) {
+  if (msg.role === 'user') return '我'
+  if (msg.source === 'HUMAN') return '人工客服'
+  if (msg.source === 'AI') return 'AI 客服'
+  return '客服（历史来源未登记）'
 }
-
+function stopSync() {
+  if (timer) clearTimeout(timer)
+  timer = undefined
+  queryAbort?.abort()
+}
+function expired() { return !session.value?.expiresAt || Date.parse(session.value.expiresAt) <= Date.now() }
+function scheduleSync() {
+  if (disposed || !connected.value) return
+  if (timer) clearTimeout(timer)
+  timer = setTimeout(async () => { await syncMessages(); scheduleSync() }, 2500)
+}
+async function syncMessages() {
+  if (!connected.value || !session.value) return
+  if (expired()) { message.warning('会话已过期，请重新开始咨询'); resetSession(); return }
+  if (polling) return polling
+  const currentEpoch = epoch, uuid = session.value.conversationUuid, token = customerSessionToken.value
+  polling = (async () => {
+    try {
+      let more = true
+      while (more && currentEpoch === epoch && !disposed) {
+        const controller = new AbortController()
+        queryAbort = controller
+        const deadline = setTimeout(() => controller.abort(), 12000)
+        let resp: Response
+        try {
+          resp = await fetch(`/api/widget/messages?conversationUuid=${encodeURIComponent(uuid)}&afterSeqNo=${cursor}`, {
+            headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
+          })
+        } finally { clearTimeout(deadline) }
+        const body = await readJson(resp)
+        if (currentEpoch !== epoch || disposed) return
+        if (resp.status === 401 || resp.status === 403 || ['401', '403'].includes(body.code)) {
+          message.warning(body.message || '会话授权已失效，请重新开始咨询'); resetSession(); return
+        }
+        if (!resp.ok || body.code !== '200') throw new Error(body.message || '消息同步失败')
+        const received: WidgetMessage[] = body.data?.messages || []
+        const ids = new Set(messages.value.map(m => m.messageUuid))
+        for (const msg of received) {
+          if (streaming.value && msg.source === 'AI' && msg.seqNo > sentAfterSeq) persistedAi.value = true
+          if (!ids.has(msg.messageUuid)) { messages.value.push(msg); ids.add(msg.messageUuid) }
+          cursor = Math.max(cursor, msg.seqNo)
+        }
+        messages.value.sort((a, b) => a.seqNo - b.seqNo)
+        closed.value = [5, 6].includes(body.data?.conversationStatus)
+        humanMode.value = [3, 4].includes(body.data?.conversationStatus)
+        if (streaming.value && !sendWasHuman && (body.data?.conversationStatus === 4 || closed.value)) {
+          handoffDuringSend = true
+          sendAbort?.abort()
+        }
+        syncNotice.value = ''
+        more = Boolean(body.data?.hasMore) && received.length > 0
+      }
+      await nextTick(); scrollToBottom()
+    } catch (error: unknown) {
+      if (currentEpoch === epoch && !disposed) syncNotice.value = '消息同步暂时中断，连接恢复后将自动补齐'
+    } finally { queryAbort = undefined }
+  })().finally(() => { polling = undefined })
+  return polling
+}
 async function startSession() {
-  if (!tenantCode.value.trim()) {
-    message.warning('请先填写店铺编码')
-    return
-  }
+  if (!tenantCode.value.trim()) { message.warning('请先填写店铺编码'); return }
   starting.value = true
-  customerSessionToken.value = ''
+  resetSession()
   try {
     const resp = await fetch('/api/widget/session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tenantCode: tenantCode.value.trim(),
-        customerEmail: customerEmail.value.trim(),
-        customerName: customerName.value.trim(),
-        language: 'zh',
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantCode: tenantCode.value.trim(), customerEmail: customerEmail.value.trim(), customerName: customerName.value.trim(), language: 'zh' }),
     })
     const body = await readJson(resp)
-    if (!resp.ok || body.code !== '200') throw new Error(formatWidgetError(resp.status, body.message))
+    if (!resp.ok || body.code !== '200') throw new Error(body.message || '无法创建会话')
     if (!body.data?.customerSessionToken) throw new Error('服务未返回客户会话令牌，请刷新后重试')
+    if (disposed) return
     session.value = body.data
     customerSessionToken.value = body.data.customerSessionToken
     connected.value = true
-    messages.value = [{ role: 'assistant', text: body.data.welcomeMessage || '您好，请问有什么可以帮您？' }]
-    await nextTick()
-    scrollToBottom()
-  } catch (error: unknown) {
-    message.error(formatFetchError(error, '无法创建会话'))
-  } finally {
-    starting.value = false
-  }
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify(body.data))
+    await syncMessages(); scheduleSync()
+  } catch (error: unknown) { message.error(widgetError(error, '无法创建会话')) }
+  finally { starting.value = false }
 }
-
 async function send(text?: string) {
   const userText = (text || input.value).trim()
-  if (!userText || streaming.value || !session.value) return
-  if (!customerSessionToken.value) {
-    message.error('会话已失效，请重新开始咨询')
-    resetSession()
-    return
-  }
-
-  messages.value.push({ role: 'user', text: userText })
-  input.value = ''
-  streamText.value = ''
+  if (!userText || streaming.value || closed.value || !session.value) return
+  if (expired()) { message.warning('会话已过期，请重新开始咨询'); resetSession(); return }
   streaming.value = true
-  await nextTick()
-  scrollToBottom()
-
+  if (polling) await polling
+  if (!session.value) { streaming.value = false; return }
+  const currentEpoch = epoch, active = session.value
+  sentAfterSeq = cursor; persistedAi.value = false; sendWasHuman = humanMode.value; handoffDuringSend = false
+  input.value = ''; streamText.value = ''
+  const controller = new AbortController(); sendAbort = controller
   try {
     const resp = await fetch('/api/widget/chat/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${customerSessionToken.value}`,
-      },
-      body: JSON.stringify({
-        tenantCode: tenantCode.value.trim(),
-        conversationUuid: session.value.conversationUuid,
-        message: userText,
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${customerSessionToken.value}` },
+      body: JSON.stringify({ tenantCode: active.tenantCode, conversationUuid: active.conversationUuid, message: userText }),
+      signal: controller.signal,
     })
-    if (!resp.ok) throw new Error(formatWidgetError(resp.status, (await readJson(resp)).message))
-
+    if (!resp.ok || !resp.headers.get('content-type')?.includes('text/event-stream')) {
+      const body = await readJson(resp)
+      if (resp.status === 401) resetSession()
+      throw new Error(body.message || '发送失败')
+    }
+    // 用户气泡只来自真实消息 UUID；查询与流式可以并行，正式回复出现后隐藏临时气泡。
+    await syncMessages()
     let streamError = ''
     await consumeSse(resp, ({ event, data }) => {
-      if (event === 'status' || event === 'done' || data === '[DONE]') return
-      if (event === 'error') {
-        streamError = data || '服务暂时不可用'
-        return
-      }
+      if (currentEpoch !== epoch || disposed) return
+      if (event === 'error') { streamError = data || '服务暂时不可用'; return }
       if (event === 'final') streamText.value = data
       else if (event === 'translated_delta' || event === 'message') streamText.value += data
     })
-
-    if (streamError) {
-      // 服务端明确返回错误：不落库、不显示半截回复
-      message.error(streamError)
-      streamText.value = ''
-      return
-    }
-
-    const finalText = streamText.value.trim()
-    if (finalText) {
-      messages.value.push({ role: 'assistant', text: finalText })
-      await nextTick()
-      scrollToBottom()
-    }
+    if (streamError) message.error(streamError)
   } catch (error: unknown) {
-    message.error(formatFetchError(error, '回复失败'))
-    const errorMessage = error instanceof Error ? error.message : ''
-    if (errorMessage.includes('会话已过期') || errorMessage.includes('重新开始咨询')) {
-      resetSession()
-    }
+    if (currentEpoch === epoch && !disposed && !handoffDuringSend) message.error(widgetError(error, '发送失败，连接恢复后可查询已保存消息'))
   } finally {
-    streamText.value = ''
-    streaming.value = false
+    if (currentEpoch === epoch) {
+      streaming.value = false; streamText.value = ''
+      await syncMessages(); scheduleSync()
+    }
+    if (sendAbort === controller) sendAbort = undefined
   }
 }
-
 function resetSession() {
-  connected.value = false
-  session.value = null
-  customerSessionToken.value = ''
-  messages.value = []
+  epoch++; stopSync(); sendAbort?.abort()
+  connected.value = false; session.value = null; customerSessionToken.value = ''
+  messages.value = []; cursor = 0; closed.value = false; streaming.value = false
+  streamText.value = ''; syncNotice.value = ''; humanMode.value = false; persistedAi.value = false
+  sessionStorage.removeItem(CACHE_KEY)
 }
-
-function scrollToBottom() {
-  messagesEl.value?.scrollTo({ top: messagesEl.value.scrollHeight, behavior: 'smooth' })
+function scrollToBottom() { messagesEl.value?.scrollTo({ top: messagesEl.value.scrollHeight, behavior: 'smooth' }) }
+async function readJson(resp: Response) { try { return await resp.json() } catch { return {} } }
+function widgetError(error: unknown, fallback: string) {
+  const text = error instanceof Error ? error.message : ''
+  if (/Failed to fetch|NetworkError|Load failed|aborted/i.test(text)) return '连接服务失败，恢复后会自动同步已保存消息，请勿重复发送'
+  return text || fallback
 }
-
-async function readJson(resp: Response) {
+onMounted(async () => {
   try {
-    return await resp.json()
-  } catch {
-    return {}
-  }
-}
-
-function formatWidgetError(status: number, errorMessage?: string) {
-  if (status === 400) return errorMessage || '请求内容格式不正确，请刷新页面后重试'
-  if (status === 401) return errorMessage || '会话已过期，请重新开始咨询'
-  if (status === 403) return errorMessage || '当前会话无权限访问该店铺或订单'
-  if (status === 405) return '请求方法错误，请刷新页面使用最新版本'
-  if (status >= 500) return '服务异常，请稍后重试或联系人工客服'
-  return errorMessage || `请求失败（HTTP ${status}）`
-}
-
-function formatFetchError(error: unknown, fallback: string) {
-  const errorMessage = error instanceof Error ? error.message : ''
-  if (errorMessage === 'Failed to fetch' || errorMessage === 'NetworkError when attempting to fetch resource.') {
-    return '无法连接服务，请确认后端已启动后重试'
-  }
-  return errorMessage || fallback
-}
+    const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) || 'null') as WidgetSession | null
+    if (cached?.customerSessionToken && Date.parse(cached.expiresAt || '') > Date.now()) {
+      session.value = cached; tenantCode.value = cached.tenantCode
+      customerSessionToken.value = cached.customerSessionToken; connected.value = true
+      await syncMessages(); scheduleSync()
+    } else sessionStorage.removeItem(CACHE_KEY)
+  } catch { sessionStorage.removeItem(CACHE_KEY) }
+})
+onBeforeUnmount(() => { disposed = true; epoch++; stopSync(); sendAbort?.abort() })
 </script>
 
 <style scoped>
+.message-source { color: #667085; font-size: 11px; }
+.sync-notice { padding: 6px 12px; color: #b54708; font-size: 12px; }
 .widget-shell {
   background: #f2f5f9;
   display: grid;

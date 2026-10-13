@@ -6,6 +6,9 @@ import com.omnimerchant.agent.entity.ChatMessage;
 import com.omnimerchant.agent.entity.Conversation;
 import com.omnimerchant.agent.mapper.ChatMessageMapper;
 import com.omnimerchant.agent.mapper.ConversationMapper;
+import com.omnimerchant.agent.dto.WidgetDtos;
+import com.omnimerchant.common.exception.BusinessException;
+import com.omnimerchant.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -55,7 +58,7 @@ public class ChatMessagePersistenceService {
      */
     @Transactional
     public ChatMessage saveUserMessage(Conversation conversation, String content, String intent) {
-        var saved = insertWithSeqRetry(conversation, ROLE_USER, content, 0, null, null);
+        var saved = insertWithSeqRetry(conversation, ROLE_USER, content, 0, null, null, "USER", null);
         if (intent != null && !intent.isBlank()) {
             conversationMapper.update(null, new LambdaUpdateWrapper<Conversation>()
                     .eq(Conversation::getId, conversation.getId())
@@ -83,7 +86,53 @@ public class ChatMessagePersistenceService {
     @Transactional
     public ChatMessage saveAssistantMessage(Conversation conversation, String content,
                                            String modelName, Integer latencyMs) {
-        return insertWithSeqRetry(conversation, ROLE_ASSISTANT, content, 1, modelName, latencyMs);
+        return insertWithSeqRetry(conversation, ROLE_ASSISTANT, content, 1, modelName, latencyMs, "AI", null);
+    }
+
+    /** 锁内判断发送资格，避免关闭、接管与买家写入发生竞态。 */
+    @Transactional
+    public ChatMessage saveWidgetUserMessage(Conversation conversation, String content) {
+        var locked = lockConversation(conversation);
+        if (locked.getStatus() == null || !java.util.Set.of(1, 2, 3, 4).contains(locked.getStatus())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "会话已关闭，请重新开始咨询");
+        }
+        conversation.setStatus(locked.getStatus());
+        conversation.setHumanAgentId(locked.getHumanAgentId());
+        return saveUserMessage(conversation, content, null);
+    }
+
+    @Transactional
+    public ChatMessage saveHumanMessage(Conversation conversation, String content, Long actorId) {
+        var locked = lockConversation(conversation);
+        if (actorId == null || !actorId.equals(locked.getHumanAgentId()) || !Integer.valueOf(4).equals(locked.getStatus())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "请由已接管会话的客服回复");
+        }
+        return insertWithSeqRetry(conversation, ROLE_ASSISTANT, content, 0, null, null, "HUMAN", actorId);
+    }
+
+    public WidgetDtos.WidgetMessagesResponse widgetMessages(Conversation conversation, int afterSeqNo) {
+        if (afterSeqNo < 0) throw new BusinessException(ErrorCode.BAD_REQUEST, "消息序号不能为负数");
+        var rows = chatMessageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getTenantId, conversation.getTenantId())
+                .eq(ChatMessage::getConversationId, conversation.getId())
+                .eq(ChatMessage::getConversationUuid, conversation.getConversationUuid())
+                .in(ChatMessage::getRole, java.util.List.of("user", "assistant"))
+                .and(w -> w.isNull(ChatMessage::getSource).or().in(ChatMessage::getSource, java.util.List.of("USER", "AI", "HUMAN")))
+                .isNull(ChatMessage::getToolName).isNull(ChatMessage::getToolCalls)
+                .gt(ChatMessage::getSeqNo, afterSeqNo).orderByAsc(ChatMessage::getSeqNo).last("LIMIT 101"));
+        return new WidgetDtos.WidgetMessagesResponse(rows.stream().limit(100)
+                .map(m -> new WidgetDtos.WidgetMessage(m.getMessageUuid(), m.getSeqNo(), m.getRole(),
+                        m.getContent(), m.getCreatedAt(), m.getSource())).toList(), rows.size() > 100, conversation.getStatus());
+    }
+
+    private Conversation lockConversation(Conversation conversation) {
+        var locked = conversationMapper.selectOne(new LambdaQueryWrapper<Conversation>()
+                .eq(Conversation::getId, conversation.getId())
+                .eq(Conversation::getTenantId, conversation.getTenantId()).last("FOR UPDATE"));
+        if (locked == null || !java.util.Objects.equals(locked.getConversationUuid(), conversation.getConversationUuid())) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "会话不存在");
+        }
+        return locked;
     }
 
     /**
@@ -114,12 +163,15 @@ public class ChatMessagePersistenceService {
     // ==================================================================
 
     private ChatMessage insertWithSeqRetry(Conversation conversation, String role, String content,
-                                           int isStreamed, String modelName, Integer latencyMs) {
+                                           int isStreamed, String modelName, Integer latencyMs, String source, Long senderId) {
         for (int attempt = 1; attempt <= MAX_SEQ_RETRY; attempt++) {
             // 1. 锁定会话行，串行化同一会话的序号分配（必须与插入在同一事务内）
-            var locked = conversationMapper.selectOne(new LambdaQueryWrapper<Conversation>()
-                    .eq(Conversation::getId, conversation.getId())
-                    .last("FOR UPDATE"));
+            var locked = lockConversation(conversation);
+
+            if ("AI".equals(source) && (locked.getHumanAgentId() != null
+                    || Integer.valueOf(5).equals(locked.getStatus()) || Integer.valueOf(6).equals(locked.getStatus()))) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "会话已由人工接管或关闭，停止保存 AI 回复");
+            }
 
             int nextSeq = nextSeqNo(conversation.getId());
 
@@ -130,6 +182,8 @@ public class ChatMessagePersistenceService {
             message.setConversationId(conversation.getId());
             message.setTenantId(conversation.getTenantId());
             message.setRole(role);
+            message.setSource(source);
+            message.setSenderId(senderId);
             message.setSeqNo(nextSeq);
             message.setContent(content);
             message.setContentType("TEXT");
@@ -141,7 +195,7 @@ public class ChatMessagePersistenceService {
                 message.setCompletionTokens(0);
                 message.setTotalTokens(0);
                 message.setCostUsd(BigDecimal.ZERO);
-                message.setModelProvider("deepseek");
+                message.setModelProvider("AI".equals(source) ? "deepseek" : null);
                 message.setModelName(modelName);
                 message.setLatencyMs(latencyMs);
             }

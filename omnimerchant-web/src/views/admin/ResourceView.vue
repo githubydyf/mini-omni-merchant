@@ -146,6 +146,12 @@
 
           <!-- 订单专属：订单商品明细表 + 物流轨迹时间线 -->
           <template v-if="props.resource === 'orders'">
+            <a-divider orientation="left">售后申请与执行</a-divider>
+            <a-alert type="info" show-icon message="订单和支付状态来自实际订单记录；本地审批、演示退款状态不能证明资金到账。" />
+            <a-empty v-if="!afterSales.length" description="暂无售后申请" />
+            <div v-for="request in afterSales" :key="`${request.source}:${request.id}`" class="after-sales-item">
+              <strong>{{ request.requestNo }} · {{ request.actionType }}</strong><p>申请状态：{{ request.statusLabel }}</p><p>执行状态：{{ request.execution?.label || '历史记录未提供执行凭据' }}</p>
+            </div>
             <a-divider orientation="left">订单商品</a-divider>
             <a-table
               :columns="orderItemColumns"
@@ -222,7 +228,7 @@ import { ReloadOutlined } from "@ant-design/icons-vue";
 import api from "@/api";
 import { displayBusinessValue } from "@/utils/display";
 import FilterBar from "@/components/admin/FilterBar.vue";
-import type { ResourceRecord } from "@/types/contracts";
+import type { ResourceRecord, ActionRequest } from "@/types/contracts";
 
 // 由路由 props 传入的资源标识："customers" | "orders" | "products"（也有 inbox/tickets 配置）
 // 组件不认识 URL，只认这个语义值；URL↔资源 的映射由路由负责。
@@ -398,6 +404,7 @@ const size = ref(20);                                 // 每页条数（固定�
 const loading = ref(false);                           // 列表加载中
 const detailOpen = ref(false);                        // 详情抽屉是否打开
 const detailLoading = ref(false);                     // 详情加载中
+const afterSales = ref<ActionRequest[]>([]);
 const detail = ref<ResourceRecord | null>(null);      // 详情数据
 const resolveOpen = ref(false);                       // 解决工单弹窗（tickets 用，死代码）
 const resolveRow = ref<ResourceRecord | null>(null);  // 待解决的工单行
@@ -555,9 +562,14 @@ async function openDetail(record: ResourceRecord) {
   detailOpen.value = true;
   detailLoading.value = true;
   detail.value = null;
+  afterSales.value = [];
   try {
     const res = await api.get(`${endpoint}/${record.id}`);
     detail.value = res.data || null;
+    if (props.resource === 'orders') {
+      const requests = await api.get(`/orders/${record.id}/after-sales`);
+      afterSales.value = requests.data || [];
+    }
   } finally {
     detailLoading.value = false;
   }
@@ -650,6 +662,7 @@ onMounted(loadData);
 </script>
 
 <style scoped>
+.after-sales-item { margin-top: 12px; padding: 10px; border-bottom: 1px solid #eee; }
 .resource-filter {
   margin-bottom: 14px;
 }

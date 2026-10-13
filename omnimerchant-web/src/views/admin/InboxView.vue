@@ -95,7 +95,7 @@
               <a-button v-if="compact" @click="contextDrawerOpen = true"
                 ><template #icon><ProfileOutlined /></template>上下文</a-button
               >
-              <a-button v-if="selected.status !== 4" @click="takeover"
+              <a-button v-if="selected.status !== 4 || selected.humanAgentId !== auth.userId" :disabled="[5, 6].includes(selected.status || 0)" @click="takeover"
                 ><template #icon><UserSwitchOutlined /></template>接管</a-button
               >
               <StatusTag
@@ -125,7 +125,7 @@
                 :class="message.role"
               >
                 <div class="message-meta">
-                  <strong>{{ roleLabel(message.role) }}</strong
+                  <strong>{{ roleLabel(message.role, message.source) }}</strong
                   ><span>{{ formatTime(message.createdAt) }}</span>
                 </div>
                 <div class="message-bubble">{{ message.content }}</div>
@@ -165,10 +165,10 @@
             />
             <div class="composer-actions">
               <a-checkbox v-model:checked="closeAfterReply"
-                >回复后标记已解决</a-checkbox
+                >回复后关闭会话</a-checkbox
               ><a-button
                 type="primary"
-                :disabled="!reply.trim()"
+                :disabled="!reply.trim() || selected.status !== 4 || selected.humanAgentId !== auth.userId"
                 :loading="sending"
                 @click="sendReply"
                 ><template #icon><SendOutlined /></template>发送回复</a-button
@@ -204,6 +204,7 @@ import {
   UserSwitchOutlined,
 } from "@ant-design/icons-vue";
 import api from "@/api";
+import { useAuthStore } from "@/stores/auth";
 import PageToolbar from "@/components/admin/PageToolbar.vue";
 import BackendEmptyState from "@/components/admin/BackendEmptyState.vue";
 import StatusTag from "@/components/admin/StatusTag.vue";
@@ -214,6 +215,11 @@ import type {
   QueueBucket,
 } from "@/types/inbox";
 
+const auth = useAuthStore();
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+let pollBusy = false;
+let contextRequest = 0;
+let disposed = false;
 const queues = ref<QueueBucket[]>([]),
   items = ref<InboxWorkItem[]>([]);
 const queue = ref("unassigned"),
@@ -310,20 +316,24 @@ async function selectItem(item: InboxWorkItem) {
   // 切换会话：始终定位到新会话的最新消息
   await loadContext({ stickToBottom: true });
 }
-async function loadContext(options?: { stickToBottom?: boolean }) {
+async function loadContext(options?: { stickToBottom?: boolean; silent?: boolean }) {
   if (!selected.value?.conversationUuid) return;
   // 是否在消息更新后跟随到底部：切换会话强制滚动；
   // 否则只有在客服本就停留在最新消息附近时才跟随，避免打断向上查看历史。
   const stick = options?.stickToBottom === true || atBottom.value;
-  contextLoading.value = true;
+  const uuid = selected.value.conversationUuid;
+  const requestId = ++contextRequest;
+  if (!options?.silent) contextLoading.value = true;
   contextError.value = "";
   try {
     const r = await api.get(
-      `/inbox/${selected.value.conversationUuid}/context`,
+      `/inbox/${uuid}/context`,
     );
+    if (disposed || selected.value?.conversationUuid !== uuid || requestId !== contextRequest) return;
     context.value = r.data;
+    if (r.data?.conversation) selected.value = r.data.conversation;
   } catch (cause: unknown) {
-    contextError.value = cause instanceof Error ? cause.message : "上下文加载失败";
+    if (!options?.silent) contextError.value = cause instanceof Error ? cause.message : "上下文加载失败";
   } finally {
     contextLoading.value = false;
   }
@@ -337,6 +347,7 @@ async function takeover() {
     note: "客服工作台人工接管",
   });
   message.success("已接管会话");
+  queue.value = "mine";
   await refresh();
   await loadContext();
 }
@@ -361,11 +372,11 @@ async function sendReply() {
 function initial(v: string) {
   return (v || "?").trim().charAt(0).toUpperCase();
 }
-function roleLabel(role: string) {
+function roleLabel(role: string, source?: string) {
   return role === "user"
     ? "客户"
     : role === "assistant"
-      ? "AI 客服"
+      ? source === "HUMAN" ? "人工客服" : source === "AI" ? "AI 客服" : "客服（历史来源未登记）"
       : role === "tool"
         ? "工具"
         : "系统";
@@ -398,8 +409,17 @@ function resize() {
 onMounted(() => {
   window.addEventListener("resize", resize);
   void refresh();
+  pollTimer = setInterval(async () => {
+    if (pollBusy || disposed || sending.value) return;
+    pollBusy = true;
+    try {
+      if (selected.value) await loadContext({ silent: true });
+      else await refresh();
+    } catch { /* 网络恢复后继续读取，不自动重发消息。 */ }
+    finally { pollBusy = false; }
+  }, 2500);
 });
-onBeforeUnmount(() => window.removeEventListener("resize", resize));
+onBeforeUnmount(() => { disposed = true; contextRequest++; if (pollTimer) clearInterval(pollTimer); window.removeEventListener("resize", resize); });
 </script>
 
 <style scoped>

@@ -79,6 +79,9 @@ export interface ConversationMessage {
 }
 
 export interface ActionRequest {
+  execution?: { state: string; label: string; executable: boolean }
+  resolution?: string
+  resolutionNote?: string
   source: string
   id: number
   requestNo?: string

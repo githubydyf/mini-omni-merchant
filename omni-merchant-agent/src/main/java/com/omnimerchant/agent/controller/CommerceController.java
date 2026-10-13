@@ -52,6 +52,11 @@ public class CommerceController {
         return R.ok(commerceService.getOrder(id));
     }
 
+    @GetMapping("/orders/{id}/after-sales")
+    public R<?> orderAfterSales(@PathVariable Long id) {
+        return R.ok(commerceService.orderAfterSales(id));
+    }
+
     @GetMapping("/orders/by-number/{orderNumber}")
     public R<?> orderByNumber(@PathVariable String orderNumber) {
         return R.ok(commerceService.getOrderByNumber(orderNumber));

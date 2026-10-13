@@ -38,6 +38,7 @@ public class CommercePlatformService {
     private final ProductMapper productMapper;
     private final ReturnRequestMapper returnRequestMapper;
     private final ObjectMapper objectMapper;
+    private final CommerceApprovalService approvalService;
 
 
 
@@ -87,6 +88,13 @@ public class CommercePlatformService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "订单不存在");
         }
         return toOrderVO(order);
+    }
+
+    public List<com.omnimerchant.agent.dto.HelpdeskDtos.ActionRequestVO> orderAfterSales(Long id) {
+        var order = getOrder(id);
+        var conversation = new com.omnimerchant.agent.entity.Conversation();
+        conversation.setRelatedOrderId(order.externalOrderNumber());
+        return approvalService.forConversation(conversation);
     }
 
     public CommerceDtos.OrderVO getOrderByNumber(String orderNumber) {
@@ -151,7 +159,7 @@ public class CommercePlatformService {
         var lookup = queryOrder(orderNumber, customerEmail);
         if (!lookup.verified()) {
             return ReturnActionResult.rejected(orderNumber, "IDENTITY_VERIFICATION_REQUIRED",
-                    "Please provide the order email or phone number before a return request can be created.");
+                    "请先提供下单邮箱或手机号，核验后才能创建退货申请。");
         }
         var request = new ReturnRequest();
         request.setTenantId(tenantIdOf(lookup));
@@ -176,7 +184,7 @@ public class CommercePlatformService {
         var lookup = queryOrder(orderNumber, customerEmail);
         if (!lookup.verified()) {
             return ReturnActionResult.rejected(orderNumber, "IDENTITY_VERIFICATION_REQUIRED",
-                    "Please verify the order owner before a refund or replacement can be requested.");
+                    "请先核验订单归属，再提交退款或补发申请。");
         }
         var request = new ReturnRequest();
         request.setTenantId(tenantIdOf(lookup));
@@ -199,7 +207,7 @@ public class CommercePlatformService {
         var lookup = queryOrder(orderNumber, customerEmail);
         if (!lookup.verified()) {
             return ReturnActionResult.rejected(orderNumber, "IDENTITY_VERIFICATION_REQUIRED",
-                    "Please verify the order owner before an address-change request can be created.");
+                    "请先核验订单归属，再提交地址修改申请。");
         }
         var request = new ReturnRequest();
         request.setTenantId(tenantIdOf(lookup));
@@ -207,7 +215,7 @@ public class CommercePlatformService {
         request.setRequestType("ADDRESS_CHANGE");
         request.setExternalOrderNumber(lookup.orderId());
         request.setCustomerEmail(customerEmail);
-        request.setReason("Address change requested");
+        request.setReason("客户申请修改收货地址");
         request.setRequestedItems(normalizeJsonText(Map.of("newAddress", concise(newAddress, 1000))));
         request.setAmount(BigDecimal.ZERO);
         request.setCurrency(lookup.currency());
@@ -231,7 +239,12 @@ public class CommercePlatformService {
         if (!verified) {
             return OrderLookup.requiresVerification(order);
         }
-        return OrderLookup.verified(order, parseJsonList(order.getOrderItems()));
+        var conversation = new com.omnimerchant.agent.entity.Conversation();
+        conversation.setRelatedOrderId(order.getExternalOrderNumber());
+        var progress = approvalService.forConversation(conversation).stream()
+                .map(row -> new AfterSalesProgress(row.requestNo(), row.actionType(), row.statusLabel(),
+                        row.execution().state(), row.execution().label())).toList();
+        return OrderLookup.verified(order, parseJsonList(order.getOrderItems()), progress);
     }
 
     /**
@@ -471,23 +484,33 @@ public class CommercePlatformService {
             String trackingStatus,
             String fulfillmentStatus,
             String shippingAddress,
-            String message) {
+            String message,
+            String paymentStatus,
+            List<AfterSalesProgress> afterSalesProgress,
+            boolean paymentRefundConfirmed) {
+        public OrderLookup(String orderId, String status, boolean verified, List<Map<String, Object>> items,
+                BigDecimal totalAmount, String currency, String trackingNumber, String trackingCarrier,
+                String trackingStatus, String fulfillmentStatus, String shippingAddress, String message) {
+            this(orderId, status, verified, items, totalAmount, currency, trackingNumber, trackingCarrier,
+                    trackingStatus, fulfillmentStatus, shippingAddress, message, null, List.of(), false);
+        }
         static OrderLookup notFound(String orderNumber) {
             return new OrderLookup(orderNumber, "NOT_FOUND", false, List.of(), null, null,
-                    null, null, null, null, null, "No order was found for this tenant.");
+                    null, null, null, null, null, "本店铺没有找到该订单。");
         }
 
         static OrderLookup requiresVerification(OrderInfo order) {
             return new OrderLookup(order.getExternalOrderNumber(), "IDENTITY_VERIFICATION_REQUIRED", false,
                     List.of(), null, order.getCurrency(), null, null, null, order.getFulfillmentStatus(),
-                    null, "Please provide the order email or phone number before detailed order data is shared.");
+                    null, "请先提供下单邮箱或手机号，核验后才能查询订单详情和售后进度。");
         }
 
-        static OrderLookup verified(OrderInfo order, List<Map<String, Object>> items) {
+        static OrderLookup verified(OrderInfo order, List<Map<String, Object>> items, List<AfterSalesProgress> progress) {
             return new OrderLookup(order.getExternalOrderNumber(), order.getOrderStatus(), true, items,
                     order.getTotalAmount(), order.getCurrency(), order.getTrackingNumber(),
                     order.getTrackingCarrier(), order.getTrackingStatus(), order.getFulfillmentStatus(),
-                    order.getShippingAddress(), "Verified order details from the tenant order cache.");
+                    order.getShippingAddress(), "已核验本地订单。售后申请、审批、执行与支付退款是不同状态；本系统没有支付退款执行凭据，不能宣称资金到账。",
+                    order.getPaymentStatus(), progress, false);
         }
     }
 
@@ -504,9 +527,12 @@ public class CommercePlatformService {
         public static ReturnActionResult created(ReturnRequest request) {
             return new ReturnActionResult(request.getRequestNo(), "PENDING_HUMAN_APPROVAL",
                     request.getRequestType(), request.getExternalOrderNumber(),
-                    "Request created for human review. No external ecommerce action has been executed by AI.");
+                    "申请已提交，等待人工审批；尚未执行订单修改、退款或补发，不能表示退款成功或资金到账。");
         }
     }
+
+    public record AfterSalesProgress(String requestNo, String actionType, String approvalStatus,
+                                    String executionStatus, String executionMessage) {}
 
     /** 物流查询结果（复现自参考项目 LogisticsLookup）。 */
     public record LogisticsLookup(

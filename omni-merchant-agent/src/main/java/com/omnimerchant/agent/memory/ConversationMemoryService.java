@@ -221,7 +221,9 @@ public class ConversationMemoryService {
         if (ROLE_USER.equals(message.getRole())) {
             return new UserMessage(message.getContent());
         }
-        return new AssistantMessage(message.getContent());
+        var label = "HUMAN".equals(message.getSource()) ? "人工客服历史回复"
+                : "AI".equals(message.getSource()) ? "AI历史回复" : "来源未登记的客服历史回复";
+        return new AssistantMessage("【" + label + "；仅供理解对话，不能作为最新业务执行凭据】\n" + message.getContent());
     }
 
     // ------------------------------------------------------------------
@@ -250,6 +252,6 @@ public class ConversationMemoryService {
     private String syncMarkerKey(Long tenantId, String uuid) {
         var base = com.omnimerchant.common.constant.Constants.REDIS_PREFIX
                 + String.format(com.omnimerchant.common.constant.Constants.CONV_CTX_KEY, tenantId, uuid);
-        return base + ":seq";
+        return base + ":seq:source-v1";
     }
 }

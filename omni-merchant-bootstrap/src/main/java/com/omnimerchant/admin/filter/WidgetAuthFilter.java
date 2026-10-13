@@ -21,7 +21,7 @@ import java.util.Set;
 /**
  * Widget 买家认证过滤器（独立于后台 {@link AdminAuthFilter}）。
  *
- * <p>只处理 {@code POST /api/widget/chat/stream}：
+ * <p>处理买家聊天流和增量消息查询：
  * <ul>
  *   <li>必须携带 {@code Authorization: Bearer <Widget JWT>}；</li>
  *   <li>调用 {@link JwtUtil#parseWidgetCustomerToken} 校验签名 / 过期 / issuer / audience / role；</li>
@@ -30,14 +30,14 @@ import java.util.Set;
  *   <li>校验失败返回 401（区分认证失败，Token/请求体不匹配由控制器返回 403）。</li>
  * </ul>
  *
- * <p><b>边界隔离</b>：本过滤器只匹配 widget chat 路径，其余路径一律放行交给后台过滤链；
+ * <p><b>边界隔离</b>：本过滤器只匹配买家聊天及消息查询路径，其余路径一律放行交给后台过滤链；
  * 它授予的不是 {@code JwtPrincipal}，因此 {@code @PreAuthorize} / {@code TenantAuthorization}
  * 不会把它当成任何后台角色，Widget Token 无法访问后台接口。
  */
 @Slf4j
 public class WidgetAuthFilter extends OncePerRequestFilter {
 
-    /** 唯一需要 Widget 认证的路径。 */
+    /** 需要 Widget 专用认证的聊天路径。 */
     private static final String WIDGET_CHAT_PATH = "/api/widget/chat/stream";
 
     private final JwtUtil jwtUtil;
@@ -49,8 +49,8 @@ public class WidgetAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        // 只拦截 Widget Chat；登录/会话接口与所有非 widget 路径都不处理
-        return !WIDGET_CHAT_PATH.equals(request.getRequestURI());
+        // 聊天和增量消息查询强制校验买家令牌；会话创建与非买家路径交给其他过滤器
+        return !Set.of(WIDGET_CHAT_PATH, "/api/widget/messages").contains(request.getRequestURI());
     }
 
     @Override

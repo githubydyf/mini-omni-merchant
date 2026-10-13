@@ -72,7 +72,9 @@ public final class HelpdeskDtos {
             Integer translationLatencyMs,
             String translationFallbackReason,
             String toolName,
-            java.time.LocalDateTime createdAt) {
+            java.time.LocalDateTime createdAt,
+            String source,
+            Long senderId) {
     }
 
     public record InboxCustomerContextVO(
@@ -218,8 +220,14 @@ public final class HelpdeskDtos {
             String resolution,
             String resolutionNote,
             java.time.LocalDateTime createdAt,
-            java.time.LocalDateTime updatedAt) {
+            java.time.LocalDateTime updatedAt,
+            ActionExecutionVO execution) {
     }
+
+    public record ActionExecutionVO(String state, String label, boolean executable) {}
+
+    public record LocalActionCreate(String orderNumber, String actionType, String reason,
+                                   java.util.Map<String, String> newAddress) {}
 
     public record SlaRiskTicketVO(
             Long id,
@@ -252,7 +260,7 @@ public final class HelpdeskDtos {
     }
 
     /**
-     * 工单动作决策请求（解决/审批等）。与原项目一致；actorId 当前开发期为占位。
+     * 工单动作决策请求（解决/审批等）。actorId 只为旧客户端兼容保留，操作人始终来自认证上下文。
      */
     public record ActionDecisionRequest(Long actorId, String note) {
     }
