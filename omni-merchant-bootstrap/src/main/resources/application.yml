@@ -70,6 +70,15 @@ app:
       base-url: https://api.deepseek.com
       model: deepseek-flash
 
+    # 意图分类专用模型选项：只作用于 IntentClassificationService，不影响正式聊天模型。
+    classification:
+      # 关闭推理模型的“思考”输出。deepseek-flash 等推理模型默认先输出大量思考，
+      # 思考与最终 JSON 共享 max_tokens 预算，思考偏长时会截断 JSON 甚至使其为空。
+      # 若目标模型不支持 reasoning_effort，可置空回退到模型默认行为（由重试兜底）。
+      reasoning-effort: none
+      # 分类响应最大输出 Token（关闭思考后，正常 JSON 仅需数十 Token）。
+      max-tokens: 512
+
     # 三层模型调用限流（当前未复现 Tenant 配额体系，先用开发期静态配额）。
     # Redis Key 仍包含真实 tenantId，不同会话共享同一租户额度。
     rate-limit:
