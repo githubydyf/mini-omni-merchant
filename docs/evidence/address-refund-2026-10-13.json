@@ -1,0 +1,29 @@
+{
+  "addressOrder": "#AR1791885202648A",
+  "refundOrder": "#AR1791885202648R",
+  "addressState": {
+    "zip": "520000",
+    "order": "paid",
+    "amount": 0,
+    "payment": "paid",
+    "version": 1
+  },
+  "refundState": {
+    "zip": null,
+    "order": "refunded",
+    "amount": 100,
+    "payment": "refunded",
+    "version": 1
+  },
+  "addressCustomerConfirmed": true,
+  "addressPayloadStructured": true,
+  "refundApprovalSeparateFromExecution": true,
+  "refundRecord": {
+    "mode": "LOCAL_SIMULATION",
+    "actor": 9008,
+    "state": "EXECUTED",
+    "actualConfirmed": 0
+  },
+  "widgetReplyMentionsSimulation": true,
+  "widgetActualPaymentNotConfirmed": true
+}

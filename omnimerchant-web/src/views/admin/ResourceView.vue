@@ -455,7 +455,9 @@ const detailFields = computed(() => {
       { prop: "paymentStatus", label: "支付状态", tag: true },
       { prop: "fulfillmentStatus", label: "履约状态", tag: true },
       { prop: "totalAmount", label: "订单金额" },
-      { prop: "refundedAmount", label: "已退款金额" },
+      { prop: "refundedAmount", label: "退款登记金额" },
+      { prop: "refundMessage", label: "退款执行来源" },
+      { prop: "paymentRefundConfirmed", label: "实际支付退款" },
       { prop: "trackingNumber", label: "物流号" },
       { prop: "trackingCarrier", label: "承运商" },
       { prop: "trackingStatus", label: "物流状态", tag: true },
@@ -525,12 +527,15 @@ function tagColor(value: unknown, prop: string) {
 
 // 单元格显示：把后端原始值（如 paid）翻成中文（已支付）
 function cellDisplay(record: ResourceRecord, column: { dataIndex: string }) {
+  if (props.resource === "orders" && column.dataIndex === "orderStatus" && record.refundExecutionMode === "LOCAL_SIMULATION") return "本地模拟已退款 · 实际支付退款未确认";
   return displayBusinessValue(cellValue(record, column), column.dataIndex);
 }
 
 // 详情字段显示：同样走枚举翻译
 function displayDetailValue(prop: string) {
   if (!detail.value) return "—";
+  if (["orderStatus", "paymentStatus"].includes(prop) && detail.value.refundExecutionMode === "LOCAL_SIMULATION") return "本地模拟已退款";
+  if (prop === "paymentRefundConfirmed") return detail.value[prop] === true ? "已确认" : "未确认";
   return displayBusinessValue(detail.value[prop], prop);
 }
 

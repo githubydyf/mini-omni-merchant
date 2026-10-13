@@ -15,7 +15,7 @@
         ><a-alert
           type="warning"
           show-icon
-          message="取消和改址可单独执行本地操作；退款待人工处理"
+          message="取消和改址可执行本地操作；退款仅支持明确执行全额本地模拟，未调用真实支付渠道"
         /><a-button type="primary" @click="createOpen = true">登记本地订单申请</a-button><a-button :loading="loading" @click="load"
           ><template #icon><ReloadOutlined /></template>刷新</a-button
         ></template
@@ -50,7 +50,7 @@
         ><template v-else-if="column.key === 'actions'"
           ><a-space
             ><a-popconfirm
-              title="批准申请后仍需授权人员单独执行；退款等待人工处理。继续？"
+              title="批准申请后仍需授权人员单独执行；批准不代表退款执行或到账。继续？"
               @confirm="decide(record, 'approve')"
               ><a-button
                 size="small"
@@ -64,8 +64,8 @@
               ><a-button size="small" danger :disabled="finished(record)"
                 >拒绝</a-button
               ></a-popconfirm
-            ><a-popconfirm v-if="record.execution?.executable && canExecute" title="确认执行已批准的本地订单操作？支付状态不会修改。" @confirm="execute(record)">
-              <a-button size="small" :loading="executing === `${record.source}:${record.id}`">执行已批准操作</a-button>
+            ><a-popconfirm v-if="record.execution?.executable && canExecute" :title="record.actionType === 'REFUND' ? '确认执行全额本地模拟退款？仅登记系统状态和金额，未调用真实支付渠道，不代表资金到账。' : '确认执行已批准的本地订单操作？支付状态不会修改。'" @confirm="execute(record)">
+              <a-button size="small" :loading="executing === `${record.source}:${record.id}`">{{ record.actionType === 'REFUND' ? '执行本地模拟退款' : '执行已批准操作' }}</a-button>
             </a-popconfirm></a-space
           ></template
         ></template
@@ -75,7 +75,7 @@
         type="warning"
         show-icon
         message="审批与执行分开记录"
-        description="本地取消、改址需要明确执行。退款未接入支付渠道；退货待寄回验收；补发待人工安排。"
+        description="本地取消、改址需要明确执行。退款仅可执行本地模拟，未接入支付渠道，不代表到账；退货待寄回验收；补发待人工安排。"
       /><a-descriptions
         v-if="current"
         :column="1"
@@ -212,9 +212,10 @@ async function open(v: ActionRequest) {
 }
 function eventLabel(type: string) { return type === 'EXECUTION' ? '执行' : type === 'APPROVED' ? '审批批准' : '审批拒绝'; }
 async function execute(v: ActionRequest) {
+  if (executing.value) return;
   executing.value = `${v.source}:${v.id}`;
   try {
-    const r = await api.post(`/actions/${v.source}/${v.id}/execute`);
+    const r = await api.post(`/actions/${v.source}/${v.id}/execute`, v.actionType === 'REFUND' ? { executionMode: 'LOCAL_SIMULATION' } : undefined);
     message.success(r.data?.note || '本地操作已执行'); await load();
   } catch (cause) { message.error(httpErrorMessage(cause, '执行失败')); await load(); }
   finally { executing.value = ''; }

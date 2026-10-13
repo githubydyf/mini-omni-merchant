@@ -17,6 +17,8 @@ public class CommerceActionRecord {
     private String eventType;
     private String state;
     private String executionKey;
+    private String executionMode;
+    private Boolean paymentRefundConfirmed;
     private Long actorId;
     private Long orderId;
     private String note;

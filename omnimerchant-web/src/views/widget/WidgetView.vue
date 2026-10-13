@@ -31,6 +31,13 @@
             <div class="msg-body" v-html="render(streamText || '正在回复...')"></div>
           </div>
         </div>
+        <div v-if="addressDraft && !closed" class="address-confirmation">
+          <strong>请确认订单 {{ addressDraft.orderNumber }} 的完整新地址</strong>
+          <p>{{ addressDraft.address.recipient }} · {{ addressDraft.address.phone }}</p>
+          <p>{{ addressDraft.address.state }} {{ addressDraft.address.address }} · {{ addressDraft.address.country }} · 邮编 {{ addressDraft.address.zip }}</p>
+          <p>确认后提交人工审批，地址尚未修改。</p>
+          <a-button type="primary" :loading="confirmingAddress" :disabled="streaming || !['recipient', 'phone', 'address', 'country', 'state', 'zip'].every(field => addressDraft?.address[field])" @click="confirmAddress">确认地址并提交审批</a-button>
+        </div>
         <div v-if="syncNotice" class="sync-notice">{{ syncNotice }}</div>
         <div class="composer">
           <a-input-search
@@ -66,6 +73,8 @@ const persistedAi = ref(false), humanMode = ref(false)
 let sentAfterSeq = 0, sendWasHuman = false, handoffDuringSend = false
 const messages = ref<WidgetMessage[]>([])
 const messagesEl = ref<HTMLElement>()
+const addressDraft = ref<{ draftUuid: string; orderNumber: string; address: Record<string, string> } | null>(null)
+const confirmingAddress = ref(false)
 let cursor = 0, epoch = 0, disposed = false
 let timer: ReturnType<typeof setTimeout> | undefined
 let queryAbort: AbortController | undefined, sendAbort: AbortController | undefined
@@ -131,6 +140,11 @@ async function syncMessages() {
         syncNotice.value = ''
         more = Boolean(body.data?.hasMore) && received.length > 0
       }
+      try {
+        const draftResponse = await fetch(`/api/widget/address-draft?conversationUuid=${encodeURIComponent(uuid)}`, { headers: { Authorization: `Bearer ${token}` } })
+        const draftBody = await readJson(draftResponse)
+        if (currentEpoch === epoch && !disposed && draftResponse.ok && draftBody.code === '200') addressDraft.value = draftBody.data || null
+      } catch { /* 候选地址查询失败不影响正常消息同步。 */ }
       await nextTick(); scrollToBottom()
     } catch (error: unknown) {
       if (currentEpoch === epoch && !disposed) syncNotice.value = '消息同步暂时中断，连接恢复后将自动补齐'
@@ -201,9 +215,26 @@ async function send(text?: string) {
     if (sendAbort === controller) sendAbort = undefined
   }
 }
+async function confirmAddress() {
+  if (!session.value || !addressDraft.value || confirmingAddress.value || expired()) return
+  const activeEpoch = epoch, draft = addressDraft.value
+  confirmingAddress.value = true
+  try {
+    const resp = await fetch('/api/widget/address-confirmation', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${customerSessionToken.value}` },
+      body: JSON.stringify({ conversationUuid: session.value.conversationUuid, draftUuid: draft.draftUuid }) })
+    const body = await readJson(resp)
+    if (activeEpoch !== epoch) return
+    if (!resp.ok || body.code !== '200') throw new Error(body.message || '地址确认失败')
+    addressDraft.value = null
+    message.success(`地址申请 ${body.data.requestNo} 已提交，等待人工审批；地址尚未修改`)
+    await syncMessages()
+  } catch (error) { if (activeEpoch === epoch) message.error(widgetError(error, '地址确认失败')) }
+  finally { confirmingAddress.value = false }
+}
 function resetSession() {
   epoch++; stopSync(); sendAbort?.abort()
   connected.value = false; session.value = null; customerSessionToken.value = ''
+  addressDraft.value = null; confirmingAddress.value = false
   messages.value = []; cursor = 0; closed.value = false; streaming.value = false
   streamText.value = ''; syncNotice.value = ''; humanMode.value = false; persistedAi.value = false
   sessionStorage.removeItem(CACHE_KEY)
@@ -229,6 +260,8 @@ onBeforeUnmount(() => { disposed = true; epoch++; stopSync(); sendAbort?.abort()
 </script>
 
 <style scoped>
+.address-confirmation { padding: 12px; background: #f0f7ff; font-size: 12px; }
+.address-confirmation p { margin: 4px 0; }
 .message-source { color: #667085; font-size: 11px; }
 .sync-notice { padding: 6px 12px; color: #b54708; font-size: 12px; }
 .widget-shell {

@@ -28,12 +28,17 @@ public class CommerceActionExecutionService {
     private final CommerceActionAuditService audit;
     private final ObjectMapper json;
     private final PlatformTransactionManager transactionManager;
+    private final AddressNormalizationService addressNormalization;
 
     public CommerceActionRecord execute(String source, Long id) {
+        return execute(source, id, null);
+    }
+
+    public CommerceActionRecord execute(String source, Long id, String executionMode) {
         requirePermission("action:execute");
         var transaction = new TransactionTemplate(transactionManager);
         try {
-            return transaction.execute(status -> executeLocked(source, id));
+            return transaction.execute(status -> executeLocked(source, id, executionMode));
         } catch (RuntimeException failure) {
             // 主事务已回滚。只有可见的已批准请求才记录失败，记录失败不能掩盖原错误。
             try {
@@ -57,14 +62,17 @@ public class CommerceActionExecutionService {
         return audit.history(source, id);
     }
 
-    private CommerceActionRecord executeLocked(String source, Long id) {
+    private CommerceActionRecord executeLocked(String source, Long id, String executionMode) {
         var target = load(source, id);
         if (!Objects.equals(target.tenantId(), TenantContextHolder.get())) throw forbidden("申请租户不一致");
-        if (Set.of("CANCEL_ORDER", "ADDRESS_CHANGE").contains(target.type())) requirePolicy(target.type());
+        if (Set.of("CANCEL_ORDER", "ADDRESS_CHANGE", "REFUND").contains(target.type())) requirePolicy(target.type());
+        if ("REFUND".equals(target.type()) && !"LOCAL_SIMULATION".equals(executionMode)) {
+            throw bad("请明确选择执行本地模拟退款；未调用真实支付渠道");
+        }
         var completed = audit.execution(source, id);
         if (completed != null) return completed;
         if (!target.approved()) throw bad("申请尚未批准或已拒绝，不能执行");
-        if (!Set.of("CANCEL_ORDER", "ADDRESS_CHANGE").contains(target.type())) {
+        if (!Set.of("CANCEL_ORDER", "ADDRESS_CHANGE", "REFUND").contains(target.type())) {
             throw bad("此申请已批准，等待人工处理；当前没有支付退款或补发执行能力");
         }
         var orders = orderMapper.selectList(new LambdaQueryWrapper<OrderInfo>()
@@ -80,11 +88,16 @@ public class CommerceActionExecutionService {
             throw bad("申请中的订单标识与实际订单不一致");
         }
         if (!matchesOwner(order, target.customer())) throw forbidden("申请中的客户身份与订单不一致，不能执行");
-        requireEditable(order);
+        if ("REFUND".equals(target.type())) requireRefundable(order, target);
+        else requireEditable(order);
         var before = snapshot(order);
         if ("CANCEL_ORDER".equals(target.type())) {
             order.setOrderStatus("cancelled");
             order.setCancelledAt(LocalDateTime.now());
+        } else if ("REFUND".equals(target.type())) {
+            order.setOrderStatus("refunded");
+            order.setPaymentStatus("refunded");
+            order.setRefundedAmount(order.getTotalAmount());
         } else {
             var address = validatedAddress(target.payload());
             order.setShippingAddress(address.toString());
@@ -96,6 +109,7 @@ public class CommerceActionExecutionService {
         if (orderMapper.updateById(order) != 1) throw bad("订单版本冲突，请重新读取订单后处理");
         var note = "CANCEL_ORDER".equals(target.type())
                 ? "本地订单已取消；支付状态未修改，退款仍需人工处理"
+                : "REFUND".equals(target.type()) ? "本地模拟退款已完成；未调用真实支付渠道，实际支付退款未确认，不代表资金到账"
                 : "本地收货地址已更新；未执行外部平台写入";
         var result = audit.record(source, id, target.type(), "EXECUTION", "EXECUTED", order.getId(), note, before, snapshot(order));
         if (target.returnRequest() != null) {
@@ -178,23 +192,7 @@ public class CommerceActionExecutionService {
             var address = root.get("newAddress");
             if (address != null && address.isTextual()) address = json.readTree(address.asText());
             if (address == null || !address.isObject()) throw bad("缺少经过审批的结构化新地址，请重新提交申请");
-            var normalized = json.createObjectNode();
-            var labels = Map.of("recipient", "收件人", "phone", "手机号", "address", "详细地址", "country", "国家", "state", "省市", "zip", "邮编");
-            for (var field : List.of("recipient", "phone", "address", "country", "state", "zip")) {
-                var node = address.get(field);
-                if (node == null || !node.isTextual() || node.asText().isBlank()) throw bad("新地址缺少有效字段：" + labels.get(field));
-                var text = node.asText().trim();
-                if (text.length() > ("address".equals(field) ? 500 : "state".equals(field) ? 64 : 100) || text.chars().anyMatch(Character::isISOControl)) {
-                    throw bad("新地址字段格式不合法：" + labels.get(field));
-                }
-                normalized.put(field, text);
-            }
-            if (!"CN".equalsIgnoreCase(normalized.get("country").asText())
-                    || !normalized.get("zip").asText().matches("[0-9]{6}")
-                    || !normalized.get("phone").asText().matches("[+0-9() -]{6,30}")
-                    || normalized.get("address").asText().length() < 5) throw bad("请提供有效的中国收货地址、手机号和六位邮编");
-            normalized.put("country", "CN");
-            return normalized;
+            return addressNormalization.validate(address);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -202,10 +200,36 @@ public class CommerceActionExecutionService {
         }
     }
 
+    /** 此阶段仅接受审批金额等于已付订单总额的首次全额本地模拟退款。 */
+    private void requireRefundable(OrderInfo order, Target target) {
+        if (!Set.of("DEMO", "LOCAL").contains(Objects.toString(order.getSyncSource(), ""))) throw bad("仅允许对本地演示订单执行模拟退款");
+        if (!"paid".equals(value(order.getPaymentStatus())) || !Set.of("paid", "processing", "shipped", "delivered", "cancelled").contains(value(order.getOrderStatus()))) throw bad("订单未支付或已退款，不能执行本地模拟退款");
+        var total = order.getTotalAmount();
+        var refunded = order.getRefundedAmount();
+        if (total == null || total.signum() <= 0 || refunded == null || refunded.signum() != 0) throw bad("仅支持首次全额退款；订单金额或已登记退款金额不符合条件");
+        java.math.BigDecimal amount;
+        String currency;
+        if (target.returnRequest() != null) {
+            amount = target.returnRequest().getAmount(); currency = target.returnRequest().getCurrency();
+        } else {
+            try {
+                var payload = json.readTree(target.payload());
+                amount = new java.math.BigDecimal(payload.path("amount").asText()); currency = payload.path("currency").asText();
+            } catch (Exception e) { throw bad("已批准申请缺少可靠退款金额和币种，请重新登记审批"); }
+        }
+        if (amount == null || amount.signum() <= 0 || amount.compareTo(total) != 0 || refunded.add(amount).compareTo(total) > 0
+                || currency == null || !currency.equals(order.getCurrency())) throw bad("仅支持已批准金额与订单总额及币种完全一致的全额模拟退款");
+    }
+
     private String snapshot(OrderInfo order) {
         var data = new LinkedHashMap<String, Object>();
         data.put("orderStatus", order.getOrderStatus());
         data.put("paymentStatus", order.getPaymentStatus());
+        data.put("totalAmount", order.getTotalAmount());
+        data.put("refundedAmount", order.getRefundedAmount());
+        data.put("trackingNumber", order.getTrackingNumber());
+        data.put("trackingCarrier", order.getTrackingCarrier());
+        data.put("trackingHistory", order.getTrackingHistory());
         data.put("fulfillmentStatus", order.getFulfillmentStatus());
         data.put("shippingAddress", order.getShippingAddress());
         data.put("shippingCountry", order.getShippingCountry());

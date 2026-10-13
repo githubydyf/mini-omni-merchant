@@ -91,7 +91,7 @@ test('真实双页面人工沟通、断网补齐、同文消息去重、审批�
 
     await admin.goto('/admin/actions')
     await decideRow(admin, requests[0].requestNo, '批准申请')
-    await expect(admin.locator('tbody tr').filter({ hasText: requests[0].requestNo })).toContainText('已批准，等待人工退款处理；未执行支付退款')
+    await expect(admin.locator('tbody tr').filter({ hasText: requests[0].requestNo })).toContainText('已批准，待模拟退款；未调用真实支付渠道')
     expect(query(`SELECT JSON_OBJECT('payment',payment_status,'order',order_status) FROM order_info WHERE tenant_id=1001 AND external_order_number='${refundOrder}'`)[0]).toEqual({ payment: 'paid', order: 'paid' })
     const executionEvidence: any[] = []
     for (const [number, address] of [[cancelOrder, false], [addressOrder, true]] as const) {

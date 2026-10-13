@@ -79,7 +79,7 @@ export interface ConversationMessage {
 }
 
 export interface ActionRequest {
-  execution?: { state: string; label: string; executable: boolean }
+  execution?: { state: string; label: string; executable: boolean; executionMode?: string; paymentRefundConfirmed?: boolean }
   resolution?: string
   resolutionNote?: string
   source: string

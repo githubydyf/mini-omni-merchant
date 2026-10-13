@@ -71,7 +71,7 @@ public class OrderTools {
                             lookup.trackingCarrier(),
                             lookup.trackingStatus(),
                             lookup.shippingAddress(),
-                            lookup.message());
+                            lookup.message(), lookup.paymentStatus(), lookup.afterSalesProgress(), lookup.paymentRefundConfirmed(), lookup.refundExecutionMode());
                 });
     }
 
@@ -115,19 +115,22 @@ public class OrderTools {
 
     @Tool(description = """
             为已核验的订单申请修改收货地址。\
-            AI 绝不直接写入外部订单；本工具只创建一条待人工审批的申请。
+            本工具提取客户本轮真实输入并准备完整候选地址；客户须点击 Widget 确认按钮后才创建待人工审批申请。\
+            不得声称草稿已经提交审批或地址已经修改。缺失字段时请客户重新提供完整地址及缺失信息。
             """)
     public CommercePlatformService.ReturnActionResult requestAddressChange(
             @ToolParam(description = "订单号或订单 ID") String orderId,
             @ToolParam(description = "用于订单归属核验的客户邮箱或手机号") String customerEmail,
-            @ToolParam(description = "客户申请的新收货地址") String newAddress) {
+            @ToolParam(description = "客户申请的新收货地址") String newAddress, org.springframework.ai.chat.model.ToolContext toolContext) {
         if (TenantContextHolder.get() == null) {
             return CommercePlatformService.ReturnActionResult.rejected(orderId, "MISSING_TENANT_CONTEXT",
                     "改地址申请需要已核验的租户上下文。");
         }
         return toolAuditService.record("requestAddressChange",
                 params("orderId", orderId, "customerEmailProvided", customerEmail != null && !customerEmail.isBlank()),
-                () -> commerceService.requestAddressChange(orderId, customerEmail, newAddress));
+                () -> commerceService.requestAddressChange(orderId, customerEmail,
+                        java.util.Objects.toString(toolContext.getContext().get("userMessage"), ""),
+                        java.util.Objects.toString(toolContext.getContext().get("conversationUuid"), "")));
     }
 
     /** 租户上下文缺失或订单号非法时的占位返回（不编造订单数据）。 */
@@ -167,6 +170,11 @@ public class OrderTools {
             String trackingCarrier,
             String trackingStatus,
             String shippingAddress,
-            String message) {
+            String message, String paymentStatus, List<CommercePlatformService.AfterSalesProgress> afterSalesProgress,
+            boolean paymentRefundConfirmed, String refundExecutionMode) {
+        public OrderQueryResult(String orderId, String status, boolean verified, List<Map<String, Object>> items, String totalAmount,
+                String currency, String trackingNumber, String trackingCarrier, String trackingStatus, String shippingAddress, String message) {
+            this(orderId, status, verified, items, totalAmount, currency, trackingNumber, trackingCarrier, trackingStatus, shippingAddress, message, null, List.of(), false, null);
+        }
     }
 }

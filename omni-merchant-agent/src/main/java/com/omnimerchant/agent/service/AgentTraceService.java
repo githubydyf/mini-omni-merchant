@@ -466,6 +466,7 @@ public class AgentTraceService {
         if (value == null) {
             return null;
         }
+        if (value.contains("newAddress") || value.contains("recipient") || value.matches("(?s).*(?:省|市|区|县).*(?:路|街|大道|号).*")) return "[地址相关内容已脱敏]";
         return value
                 // API Key / Bearer Token
                 .replaceAll("(?i)(sk-[A-Za-z0-9_.-]{8,})", "[apikey]")

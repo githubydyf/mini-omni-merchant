@@ -50,7 +50,7 @@ public class WidgetAuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // 聊天和增量消息查询强制校验买家令牌；会话创建与非买家路径交给其他过滤器
-        return !Set.of(WIDGET_CHAT_PATH, "/api/widget/messages").contains(request.getRequestURI());
+        return !Set.of(WIDGET_CHAT_PATH, "/api/widget/messages", "/api/widget/address-draft", "/api/widget/address-confirmation").contains(request.getRequestURI());
     }
 
     @Override

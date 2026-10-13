@@ -198,14 +198,14 @@ public class CommerceApprovalService {
         var attempt = auditService.latestAttempt(source, id);
         if (attempt != null) {
             return new HelpdeskDtos.ActionExecutionVO(attempt.getState(), attempt.getNote(),
-                    approved && !"EXECUTED".equals(attempt.getState()) && List.of("CANCEL_ORDER", "ADDRESS_CHANGE").contains(type));
+                    approved && !"EXECUTED".equals(attempt.getState()) && List.of("CANCEL_ORDER", "ADDRESS_CHANGE", "REFUND").contains(type), attempt.getExecutionMode(), false);
         }
         if (legacyDone) return new HelpdeskDtos.ActionExecutionVO("LEGACY_UNKNOWN", "历史完成记录，未提供可靠执行凭据", false);
         if (!approved) return new HelpdeskDtos.ActionExecutionVO("NOT_APPROVED", "尚未批准执行", false);
         return switch (type) {
             case "CANCEL_ORDER", "ADDRESS_CHANGE" -> new HelpdeskDtos.ActionExecutionVO("PENDING_EXECUTION", "已批准，待本地执行", true);
             case "RETURN" -> new HelpdeskDtos.ActionExecutionVO("WAITING_RETURN", "已批准退货，等待客户寄回及商家验收；尚未退款", false);
-            case "REFUND" -> new HelpdeskDtos.ActionExecutionVO("MANUAL_PENDING", "已批准，等待人工退款处理；未执行支付退款", false);
+            case "REFUND" -> new HelpdeskDtos.ActionExecutionVO("PENDING_EXECUTION", "已批准，待模拟退款；未调用真实支付渠道", true, "LOCAL_SIMULATION", false);
             case "REPLACEMENT" -> new HelpdeskDtos.ActionExecutionVO("MANUAL_PENDING", "已批准，等待人工安排补发；尚未发货", false);
             default -> new HelpdeskDtos.ActionExecutionVO("MANUAL_PENDING", "已批准，等待人工处理", false);
         };

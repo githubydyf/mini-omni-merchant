@@ -50,7 +50,7 @@ public final class CommerceDtos {
             LocalDateTime estimatedDeliveryAt,
             LocalDateTime actualDeliveryAt,
             LocalDateTime placedAt,
-            LocalDateTime updatedAt) {
+            LocalDateTime updatedAt, String refundExecutionMode, boolean paymentRefundConfirmed, String refundMessage) {
     }
 
 

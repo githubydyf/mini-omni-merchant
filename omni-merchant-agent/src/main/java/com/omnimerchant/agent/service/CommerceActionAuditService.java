@@ -25,13 +25,16 @@ public class CommerceActionAuditService {
         row.setEventType(event);
         row.setState(state);
         row.setExecutionKey("EXECUTED".equals(state) ? "LOCAL" : null);
+        row.setExecutionMode("EXECUTED".equals(state) ? ("REFUND".equals(type) ? "LOCAL_SIMULATION" : "LOCAL") : null);
+        row.setPaymentRefundConfirmed(false);
         row.setActorId(CurrentActor.id());
         row.setOrderId(orderId);
         row.setNote(note == null ? null : note.substring(0, Math.min(note.length(), 1000)));
         row.setBeforeSnapshot(before);
         row.setAfterSnapshot(after);
         row.setCreatedAt(LocalDateTime.now());
-        mapper.insert(row);
+        if (mapper.insert(row) != 1) throw new com.omnimerchant.common.exception.BusinessException(
+                com.omnimerchant.common.exception.ErrorCode.BAD_REQUEST, "执行审计保存失败，订单修改已回滚");
         return row;
     }
 
@@ -46,6 +49,14 @@ public class CommerceActionAuditService {
     public CommerceActionRecord latestAttempt(String source, Long id) {
         return mapper.selectOne(query(source, id).eq(CommerceActionRecord::getEventType, "EXECUTION")
                 .orderByDesc(CommerceActionRecord::getId).last("LIMIT 1"));
+    }
+
+    public String refundMode(Long orderId) {
+        var record = mapper.selectOne(new LambdaQueryWrapper<CommerceActionRecord>()
+                .eq(CommerceActionRecord::getTenantId, TenantContextHolder.get()).eq(CommerceActionRecord::getOrderId, orderId)
+                .eq(CommerceActionRecord::getActionType, "REFUND").eq(CommerceActionRecord::getState, "EXECUTED")
+                .eq(CommerceActionRecord::getExecutionMode, "LOCAL_SIMULATION").last("LIMIT 1"));
+        return record == null ? null : record.getExecutionMode();
     }
 
     private LambdaQueryWrapper<CommerceActionRecord> query(String source, Long id) {

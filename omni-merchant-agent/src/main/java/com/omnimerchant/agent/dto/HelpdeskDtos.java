@@ -224,7 +224,10 @@ public final class HelpdeskDtos {
             ActionExecutionVO execution) {
     }
 
-    public record ActionExecutionVO(String state, String label, boolean executable) {}
+    public record ActionExecutionVO(String state, String label, boolean executable, String executionMode, boolean paymentRefundConfirmed) {
+        public ActionExecutionVO(String state, String label, boolean executable) { this(state, label, executable, null, false); }
+    }
+    public record ActionExecuteRequest(String executionMode) {}
 
     public record LocalActionCreate(String orderNumber, String actionType, String reason,
                                    java.util.Map<String, String> newAddress) {}

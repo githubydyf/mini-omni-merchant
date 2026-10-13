@@ -57,6 +57,16 @@ class ToolAuditTracePropagationTest {
         assertThat(captor.getValue().getTraceId()).isNotEqualTo("trace-run-1");
     }
 
+    @Test
+    void orderAuditMasksAddressWhileKeepingActualRefundMode() {
+        var mapper = mock(ToolCallLogMapper.class);
+        var service = new ToolAuditService(mapper, new ObjectMapper(), mock(AgentTraceService.class));
+        var result = java.util.Map.of("shippingAddress", "测试收件人 13800000000 测试路1号", "refundExecutionMode", "LOCAL_SIMULATION", "paymentRefundConfirmed", false);
+        assertThat(service.record("queryOrder", params("orderId", "#1001"), () -> result)).isEqualTo(result);
+        var captor = ArgumentCaptor.forClass(ToolCallLog.class); verify(mapper).insert(captor.capture());
+        assertThat(captor.getValue().getResult()).contains("LOCAL_SIMULATION", "收货地址已脱敏").doesNotContain("测试收件人", "13800000000", "测试路1号");
+    }
+
     private java.util.Map<String, Object> params(String key, Object value) {
         var map = new LinkedHashMap<String, Object>();
         map.put(key, value);

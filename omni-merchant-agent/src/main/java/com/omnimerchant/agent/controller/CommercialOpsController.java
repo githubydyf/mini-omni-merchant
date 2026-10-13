@@ -132,8 +132,9 @@ public class CommercialOpsController {
 
     @PostMapping("/actions/{source}/{id}/execute")
     @PreAuthorize("@tenantAuthorization.hasPermission('action:execute')")
-    public R<?> executeAction(@PathVariable String source, @PathVariable Long id) {
-        return R.ok(executionService.execute(source, id));
+    public R<?> executeAction(@PathVariable String source, @PathVariable Long id,
+            @RequestBody(required = false) HelpdeskDtos.ActionExecuteRequest request) {
+        return R.ok(executionService.execute(source, id, request == null ? null : request.executionMode()));
     }
 
     @GetMapping("/actions/{source}/{id}/history")

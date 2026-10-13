@@ -74,6 +74,11 @@ public class ToolAuditService {
             var ended = LocalDateTime.now();
             var paramsJson = toJson(params);
             var resultJson = result == null ? null : toJson(result);
+            if ("queryOrder".equals(toolName) && resultJson != null) {
+                var safeResult = objectMapper.readTree(resultJson);
+                if (safeResult.isObject()) ((com.fasterxml.jackson.databind.node.ObjectNode) safeResult).put("shippingAddress", "收货地址已脱敏");
+                resultJson = safeResult.toString();
+            }
             var callContext = CallContextHolder.get();
             var log = new ToolCallLog();
             log.setTraceId(resolveTraceId());

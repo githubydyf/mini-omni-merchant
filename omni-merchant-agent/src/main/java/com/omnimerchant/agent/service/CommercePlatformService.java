@@ -39,6 +39,8 @@ public class CommercePlatformService {
     private final ReturnRequestMapper returnRequestMapper;
     private final ObjectMapper objectMapper;
     private final CommerceApprovalService approvalService;
+    private final AddressChangeDraftService addressDrafts;
+    private final CommerceActionAuditService actionAudit;
 
 
 
@@ -142,15 +144,8 @@ public class CommercePlatformService {
     }
 
     // ==================================================================
-    // 客户诉求创建（ReturnRequest）—— 复现自参考项目 CommercePlatformService。
-    //
-    // 原项目中这三个方法由 AI 工具（OrderTools 的 @Tool）调用：只创建
-    // “待人工审批”的内部请求，绝不执行退款/补发/改地址等外部写操作，
-    // 因此都要先核验订单归属（queryOrder → verified）。
-    //
-    // 最小适配：原项目 tenantId 取自 TenantContextHolder，当前无多租户上下文，
-    //          改为从被核验的订单读取。
-    // 注意：commerce_action_request 原项目没有任何创建入口，故此处不提供。
+    // 客户诉求准备与创建：退货、退款或补发只创建待人工审批申请；地址先准备候选草稿，客户确认后再创建申请。
+    // 工具调用保留订单归属核验和租户上下文，工作人员审批与本地执行分开；本服务没有外部支付或物流写入口。
     // ==================================================================
 
     @Transactional
@@ -204,26 +199,16 @@ public class CommercePlatformService {
 
     @Transactional
     public ReturnActionResult requestAddressChange(String orderNumber, String customerEmail, String newAddress) {
-        var lookup = queryOrder(orderNumber, customerEmail);
-        if (!lookup.verified()) {
-            return ReturnActionResult.rejected(orderNumber, "IDENTITY_VERIFICATION_REQUIRED",
-                    "请先核验订单归属，再提交地址修改申请。");
+        return requestAddressChange(orderNumber, customerEmail, newAddress, null);
+    }
+
+    @Transactional
+    public ReturnActionResult requestAddressChange(String orderNumber, String customerEmail, String rawInput, String conversationUuid) {
+        var order = findOrder(orderNumber);
+        if (order == null || !matchesCustomer(order, customerEmail)) {
+            return ReturnActionResult.rejected(orderNumber, "IDENTITY_VERIFICATION_REQUIRED", "请先核验订单归属，再确认地址修改申请。");
         }
-        var request = new ReturnRequest();
-        request.setTenantId(tenantIdOf(lookup));
-        request.setRequestNo(nextOrderRequestNo("ADR"));
-        request.setRequestType("ADDRESS_CHANGE");
-        request.setExternalOrderNumber(lookup.orderId());
-        request.setCustomerEmail(customerEmail);
-        request.setReason("客户申请修改收货地址");
-        request.setRequestedItems(normalizeJsonText(Map.of("newAddress", concise(newAddress, 1000))));
-        request.setAmount(BigDecimal.ZERO);
-        request.setCurrency(lookup.currency());
-        request.setPriority(lookup.fulfillmentStatus() != null && lookup.fulfillmentStatus().contains("fulfilled") ? 4 : 3);
-        request.setStatus(1);
-        request.setApprovalRequiredReason("ADDRESS_CHANGE_REQUIRES_AGENT_REVIEW_BEFORE_EXTERNAL_WRITE");
-        returnRequestMapper.insert(request);
-        return ReturnActionResult.created(request);
+        return addressDrafts.prepare(order, customerEmail, rawInput, conversationUuid);
     }
 
     /**
@@ -244,7 +229,7 @@ public class CommercePlatformService {
         var progress = approvalService.forConversation(conversation).stream()
                 .map(row -> new AfterSalesProgress(row.requestNo(), row.actionType(), row.statusLabel(),
                         row.execution().state(), row.execution().label())).toList();
-        return OrderLookup.verified(order, parseJsonList(order.getOrderItems()), progress);
+        return OrderLookup.verified(order, parseJsonList(order.getOrderItems()), progress, actionAudit.refundMode(order.getId()));
     }
 
     /**
@@ -395,12 +380,14 @@ public class CommercePlatformService {
     }
 
     private CommerceDtos.OrderVO toOrderVO(OrderInfo o) {
+        var refundMode = actionAudit.refundMode(o.getId());
         return new CommerceDtos.OrderVO(o.getId(), o.getExternalOrderId(), o.getExternalOrderNumber(), o.getPlatform(),
                 o.getCustomerEmail(), o.getCustomerName(), o.getCustomerPhone(), o.getOrderStatus(),
                 o.getPaymentStatus(), o.getFulfillmentStatus(), o.getCurrency(), o.getTotalAmount(),
                 o.getRefundedAmount(), o.getOrderItems(), o.getTrackingNumber(), o.getTrackingCarrier(),
                 o.getTrackingStatus(), o.getTrackingHistory(), o.getEstimatedDeliveryAt(),
-                o.getActualDeliveryAt(), o.getPlacedAt(), o.getUpdatedAt());
+                o.getActualDeliveryAt(), o.getPlacedAt(), o.getUpdatedAt(), refundMode, false,
+                "LOCAL_SIMULATION".equals(refundMode) ? "本地模拟已退款；未调用真实支付渠道，实际支付退款未确认" : "实际支付退款未确认");
     }
 
     private CommerceDtos.ProductVO toProductVO(Product p) {
@@ -487,12 +474,12 @@ public class CommercePlatformService {
             String message,
             String paymentStatus,
             List<AfterSalesProgress> afterSalesProgress,
-            boolean paymentRefundConfirmed) {
+            boolean paymentRefundConfirmed, String refundExecutionMode) {
         public OrderLookup(String orderId, String status, boolean verified, List<Map<String, Object>> items,
                 BigDecimal totalAmount, String currency, String trackingNumber, String trackingCarrier,
                 String trackingStatus, String fulfillmentStatus, String shippingAddress, String message) {
             this(orderId, status, verified, items, totalAmount, currency, trackingNumber, trackingCarrier,
-                    trackingStatus, fulfillmentStatus, shippingAddress, message, null, List.of(), false);
+                    trackingStatus, fulfillmentStatus, shippingAddress, message, null, List.of(), false, null);
         }
         static OrderLookup notFound(String orderNumber) {
             return new OrderLookup(orderNumber, "NOT_FOUND", false, List.of(), null, null,
@@ -505,12 +492,13 @@ public class CommercePlatformService {
                     null, "请先提供下单邮箱或手机号，核验后才能查询订单详情和售后进度。");
         }
 
-        static OrderLookup verified(OrderInfo order, List<Map<String, Object>> items, List<AfterSalesProgress> progress) {
+        static OrderLookup verified(OrderInfo order, List<Map<String, Object>> items, List<AfterSalesProgress> progress, String refundMode) {
             return new OrderLookup(order.getExternalOrderNumber(), order.getOrderStatus(), true, items,
                     order.getTotalAmount(), order.getCurrency(), order.getTrackingNumber(),
                     order.getTrackingCarrier(), order.getTrackingStatus(), order.getFulfillmentStatus(),
-                    order.getShippingAddress(), "已核验本地订单。售后申请、审批、执行与支付退款是不同状态；本系统没有支付退款执行凭据，不能宣称资金到账。",
-                    order.getPaymentStatus(), progress, false);
+                    order.getShippingAddress(), ("LOCAL_SIMULATION".equals(refundMode) ? "本地模拟退款已完成；未调用真实支付渠道，实际支付退款未确认。" : "已核验本地订单。")
+                            + "售后申请、审批、执行与支付退款是不同状态；本系统没有支付退款执行凭据，不能宣称资金到账。",
+                    order.getPaymentStatus(), progress, false, refundMode);
         }
     }
 
@@ -522,6 +510,16 @@ public class CommercePlatformService {
             String message) {
         public static ReturnActionResult rejected(String orderNumber, String status, String message) {
             return new ReturnActionResult(null, status, null, orderNumber, message);
+        }
+
+        public static ReturnActionResult existing(ReturnRequest request) {
+            if (request == null) throw new BusinessException(ErrorCode.NOT_FOUND, "已确认的地址申请不存在，请联系人工核实");
+            return switch (request.getStatus()) {
+                case 1, 2 -> created(request);
+                case 3 -> new ReturnActionResult(request.getRequestNo(), "APPROVED_MANUAL", request.getRequestType(), request.getExternalOrderNumber(), "已有申请已批准，仍需授权人员单独执行。");
+                case 4 -> new ReturnActionResult(request.getRequestNo(), "REJECTED", request.getRequestType(), request.getExternalOrderNumber(), "已有申请已拒绝，未重复创建申请。");
+                default -> new ReturnActionResult(request.getRequestNo(), "EXISTING_REQUEST", request.getRequestType(), request.getExternalOrderNumber(), "已有申请已处理，请查询最新订单及执行记录核实；未重复创建申请，不代表外部操作或资金到账。");
+            };
         }
 
         public static ReturnActionResult created(ReturnRequest request) {

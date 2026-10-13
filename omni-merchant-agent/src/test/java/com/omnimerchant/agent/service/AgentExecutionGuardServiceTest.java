@@ -265,6 +265,36 @@ class AgentExecutionGuardServiceTest {
     }
 
     @Test
+    void addressDraftPreparationCanRepeatWithoutConsumingApprovalGuardKey() {
+        var count = new AtomicInteger();
+        var callback = service.guard(callback("requestAddressChange", "{\"status\":\"ADDRESS_FIELDS_REQUIRED\"}", count));
+        var context = context("requestAddressChange", null);
+        callback.call("{}", context); callback.call("{}", context);
+        assertThat(count.get()).isEqualTo(2);
+        verify(guardMapper, never()).insert(any(AgentIdempotencyGuard.class));
+    }
+
+    @Test
+    void structuredAddressJsonDoesNotCountAsQuotedAuthorization() {
+        var count = new AtomicInteger();
+        var callback = service.guard(callback("requestAddressChange", "{\"status\":\"ADDRESS_CONFIRMATION_REQUIRED\"}", count));
+        var fields = new java.util.HashMap<String, Object>(context("requestAddressChange", null).getContext());
+        fields.put("userMessage", "请修改收货地址：{\"address\":\"中山大道2号\"}");
+        assertThat(callback.call("{}", new ToolContext(fields))).contains("ADDRESS_CONFIRMATION_REQUIRED");
+        assertThat(count.get()).isEqualTo(1);
+    }
+
+    @Test
+    void addressConsultationCannotPrepareDraft() {
+        var count = new AtomicInteger();
+        var callback = service.guard(callback("requestAddressChange", "不应调用", count));
+        var fields = new java.util.HashMap<String, Object>(context("requestAddressChange", null).getContext());
+        fields.put("userMessage", "可以修改收货地址吗？");
+        assertThat(callback.call("{}", new ToolContext(fields))).contains("ACTION_NOT_AUTHORIZED");
+        assertThat(count.get()).isZero();
+    }
+
+    @Test
     void sideEffectShouldRegisterBeforeExecuting() {
         var counter = new AtomicInteger();
         var guarded = service.guard(callback("requestRefundOrReplacement",

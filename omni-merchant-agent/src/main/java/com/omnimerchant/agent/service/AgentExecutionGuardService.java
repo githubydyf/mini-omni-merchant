@@ -313,6 +313,9 @@ public class AgentExecutionGuardService {
                     "当前会话的执行保护已失效，本次未执行该操作，请稍后重试。");
         }
 
+        // 地址工具只生成候选草稿；草稿哈希去重及买家确认行锁负责审批幂等，不能让缺失字段占用申请唯一键。
+        if ("requestAddressChange".equals(toolName)) return delegate.call(toolInput, toolContext);
+
         // 5. 幂等登记必须先于真实业务工具执行
         var guardKey = buildGuardKey(toolName, toolInput);
         if (!beginSideEffect(tenantId, conversationUuid, guardKey, toolName, toolInput)) {
@@ -340,6 +343,15 @@ public class AgentExecutionGuardService {
     private boolean isExplicitActionRequest(String intent, String message, String toolName) {
         if (message == null || message.isBlank() || intent == null) {
             return false;
+        }
+        if ("requestAddressChange".equals(toolName)) {
+            int start = message.indexOf('{'), end = message.lastIndexOf('}');
+            if (start >= 0 && end > start) {
+                try {
+                    if (objectMapper.readTree(message.substring(start, end + 1)).isObject())
+                        message = message.substring(0, start) + "结构化收货地址" + message.substring(end + 1);
+                } catch (Exception ignored) { }
+            }
         }
         if (java.util.regex.Pattern.compile(
                 "[?？吗么]|能否|是否|可以|能不能|怎么|如何|条件|政策|期限|多久|了解|知道|咨询|不要|不想|不需要|取消申请|"

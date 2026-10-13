@@ -44,7 +44,10 @@ class WidgetHumanExecutionMySqlTest {
     @Autowired ConversationMapper conversations;
     @Autowired CommerceActionExecutionService execution;
     @Autowired CommercePlatformService commerce;
+    @Autowired AddressChangeDraftService drafts;
+    @Autowired com.omnimerchant.agent.tool.OrderTools orderTools;
     @MockitoSpyBean CommerceActionAuditService audit;
+    @MockitoSpyBean com.omnimerchant.agent.mapper.ReturnRequestMapper returnMapper;
     @MockitoSpyBean com.omnimerchant.agent.mapper.OrderInfoMapper orderMapper;
     @MockitoSpyBean com.omnimerchant.agent.mapper.CommerceActionPolicyMapper policyMapper;
     String supervisor, agent;
@@ -65,7 +68,7 @@ class WidgetHumanExecutionMySqlTest {
     }
     @AfterEach void cleanup() {
         reset(audit);
-        reset(orderMapper, policyMapper);
+        reset(orderMapper, policyMapper, returnMapper);
         SecurityContextHolder.clearContext(); TenantContextHolder.clear();
         for (var uuid : conversationIds) {
             db.update("DELETE FROM chat_message WHERE conversation_uuid=?", uuid);
@@ -73,7 +76,7 @@ class WidgetHumanExecutionMySqlTest {
         }
         for (var id : requestIds) { db.update("DELETE FROM commerce_action_record WHERE source='commerce_action_request' AND request_id=?", id); db.update("DELETE FROM commerce_action_request WHERE id=?", id); }
         for (var id : returnIds) { db.update("DELETE FROM commerce_action_record WHERE source='return_request' AND request_id=?", id); db.update("DELETE FROM return_request WHERE id=?", id); }
-        for (var id : orderIds) db.update("DELETE FROM order_info WHERE id=?", id);
+        for (var id : orderIds) { db.update("DELETE FROM address_change_draft WHERE order_id=?", id); db.update("DELETE FROM order_info WHERE id=?", id); }
     }
     JsonNode session(String code) throws Exception {
         var result = mvc.perform(post("/api/widget/session").contentType(MediaType.APPLICATION_JSON)
@@ -232,11 +235,11 @@ class WidgetHumanExecutionMySqlTest {
         assertThat(executeApi(malformed,supervisor).get("code").asText()).isNotEqualTo("200");
     }
 
-    @Test void refundReturnReplacementNeverChangePaymentOrInventFulfillment() throws Exception {
+    @Test void approvalAndUnspecifiedExecutionNeverChangePaymentOrInventFulfillment() throws Exception {
         for (var type:List.of("REFUND","RETURN","REPLACEMENT")) {
             var order=order("paid"); var id=request(order,type,"PENDING_APPROVAL");
             var approved=adminPost("/api/actions/commerce_action_request/"+id+"/approve",supervisor,1001L,Map.of());
-            assertThat(approved.get("data").get("execution").get("executable").asBoolean()).isFalse();
+            assertThat(approved.get("data").get("execution").get("executable").asBoolean()).isEqualTo("REFUND".equals(type));
             assertThat(executeApi(id,supervisor).get("code").asText()).isNotEqualTo("200");
             assertThat(db.queryForObject("SELECT payment_status FROM order_info WHERE id=?",String.class,order)).isEqualTo("paid");
             assertThat(db.queryForObject("SELECT fulfillment_status FROM order_info WHERE id=?",String.class,order)).isEqualTo("unfulfilled");
@@ -325,8 +328,8 @@ class WidgetHumanExecutionMySqlTest {
             assertThat(result.paymentRefundConfirmed()).isFalse();
             assertThat(result.paymentStatus()).isEqualTo("paid");
             assertThat(result.afterSalesProgress()).hasSize(1);
-            assertThat(result.afterSalesProgress().get(0).executionStatus()).isEqualTo("MANUAL_PENDING");
-            assertThat(result.afterSalesProgress().get(0).executionMessage()).contains("未执行支付退款");
+            assertThat(result.afterSalesProgress().get(0).executionStatus()).isEqualTo("PENDING_EXECUTION");
+            assertThat(result.afterSalesProgress().get(0).executionMessage()).contains("未调用真实支付渠道");
         } finally { TenantContextHolder.clear(); }
     }
 
@@ -341,5 +344,202 @@ class WidgetHumanExecutionMySqlTest {
         assertThat(executeApi(id,supervisor).get("message").asText()).contains("订单标识与实际订单不一致");
         assertThat(db.queryForObject("SELECT order_status FROM order_info WHERE id=?",String.class,first)).isEqualTo("paid");
         assertThat(db.queryForObject("SELECT order_status FROM order_info WHERE id=?",String.class,second)).isEqualTo("paid");
+    }
+
+    String number(long order) { return db.queryForObject("SELECT external_order_number FROM order_info WHERE id=?",String.class,order); }
+    long refund(long order, int status) {
+        var no="IT-REFUND-"+UUID.randomUUID();
+        db.update("INSERT INTO return_request(tenant_id,request_no,request_type,external_order_number,customer_email,status,resolution,amount,currency) VALUES(1001,?,'REFUND',?,'local-buyer-it@example.com',?,?,100,'CNY')",no,number(order),status,status==3?"APPROVED_MANUAL":status==4?"REJECTED":null);
+        var id=db.queryForObject("SELECT id FROM return_request WHERE request_no=?",Long.class,no); returnIds.add(id); return id;
+    }
+    JsonNode simulate(long id) throws Exception { return adminPost("/api/actions/return_request/"+id+"/execute",supervisor,1001L,Map.of("executionMode","LOCAL_SIMULATION")); }
+    void authorize() { TenantContextHolder.set(1001L); SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(jwt.parsePrincipal(supervisor),null,List.of())); }
+    String addressRaw() { return "请把收货地址修改为广东省广州市天河区中山大道2号，邮编520000"; }
+    void prepareAddress(long order, JsonNode session) {
+        TenantContextHolder.set(1001L);
+        db.update("UPDATE order_info SET customer_name='测试收件人',customer_phone='13800000000' WHERE id=?",order);
+        try { assertThat(commerce.requestAddressChange(number(order),"local-buyer-it@example.com",addressRaw(),session.path("conversationUuid").asText()).status()).isEqualTo("ADDRESS_CONFIRMATION_REQUIRED"); }
+        finally { TenantContextHolder.clear(); }
+    }
+    JsonNode addressPost(JsonNode session, String uuid) throws Exception {
+        return json.readTree(mvc.perform(post("/api/widget/address-confirmation").header("Authorization","Bearer "+session.path("customerSessionToken").asText())
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("conversationUuid",session.path("conversationUuid").asText(),"draftUuid",uuid))))
+                .andReturn().getResponse().getContentAsString());
+    }
+    String draftUuid(JsonNode session) { return db.queryForObject("SELECT draft_uuid FROM address_change_draft WHERE conversation_uuid=? ORDER BY id DESC LIMIT 1",String.class,session.path("conversationUuid").asText()); }
+
+    @Test void addressRequiresBuyerConfirmationThenApprovedPayloadExecutes() throws Exception {
+        var order=order("paid");var session=session("OM-1001"); prepareAddress(order,session);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM return_request WHERE external_order_number=?",Integer.class,number(order))).isZero();
+        var view=json.readTree(mvc.perform(get("/api/widget/address-draft").param("conversationUuid",session.path("conversationUuid").asText())
+                .header("Authorization","Bearer "+session.path("customerSessionToken").asText())).andReturn().getResponse().getContentAsString());
+        assertThat(view.path("data").path("address").path("state").asText()).isEqualTo("广东省广州市天河区");
+        assertThat(view.path("data").path("address").path("phone").asText()).isEqualTo("13800000000");
+        var draft=draftUuid(session); var result=addressPost(session,draft);
+        assertThat(result.path("code").asText()).isEqualTo("200");
+        var id=db.queryForObject("SELECT id FROM return_request WHERE request_no=?",Long.class,result.path("data").path("requestNo").asText());returnIds.add(id);
+        var payload=json.readTree(db.queryForObject("SELECT requested_items FROM return_request WHERE id=?",String.class,id));
+        assertThat(payload.path("newAddress").isObject()).isTrue(); assertThat(payload.path("rawInput").asText()).isEqualTo(addressRaw());
+        assertThat(payload.path("customerConfirmed").asBoolean()).isTrue();
+        assertThat(addressPost(session,draft).path("data").path("requestNo")).isEqualTo(result.path("data").path("requestNo"));
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM return_request WHERE external_order_number=?",Integer.class,number(order))).isEqualTo(1);
+        assertThat(adminPost("/api/actions/return_request/"+id+"/approve",supervisor,1001L,Map.of()).path("code").asText()).isEqualTo("200");
+        assertThat(adminPost("/api/actions/return_request/"+id+"/execute",supervisor,1001L,Map.of()).path("code").asText()).isEqualTo("200");
+        assertThat(addressPost(session,draft).path("data").path("status").asText()).isEqualTo("EXISTING_REQUEST");
+        assertThat(db.queryForObject("SELECT shipping_zip FROM order_info WHERE id=?",String.class,order)).isEqualTo("520000");
+        assertThat(db.queryForObject("SELECT shipping_address FROM order_info WHERE id=?",String.class,order)).contains("中山大道2号");
+    }
+    @Test void incompleteAddressAndWrongOwnerNeverCreateApprovalOrDraft() {
+        var order=order("paid"); TenantContextHolder.set(1001L);
+        try {
+            assertThat(commerce.requestAddressChange(number(order),"local-buyer-it@example.com",addressRaw()).status()).isEqualTo("ADDRESS_FIELDS_REQUIRED");
+            assertThat(commerce.requestAddressChange(number(order),"other@example.com",addressRaw()).status()).isEqualTo("IDENTITY_VERIFICATION_REQUIRED");
+            assertThat(db.queryForObject("SELECT COUNT(*) FROM return_request WHERE external_order_number=?",Integer.class,number(order))).isZero();
+            assertThat(db.queryForObject("SELECT COUNT(*) FROM address_change_draft WHERE order_id=?",Integer.class,order)).isZero();
+        } finally { TenantContextHolder.clear(); }
+    }
+    @Test void buyerCannotConfirmAnotherConversationOrTenantDraft() throws Exception {
+        var order=order("paid");var first=session("OM-1001");prepareAddress(order,first);var draft=draftUuid(first);
+        assertThat(addressPost(session("OM-1001"),draft).path("code").asText()).isNotEqualTo("200");
+        assertThat(addressPost(session("OM-1002"),draft).path("code").asText()).isNotEqualTo("200");
+        var result=mvc.perform(post("/api/widget/address-confirmation").header("Authorization","Bearer "+supervisor).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("conversationUuid",first.path("conversationUuid").asText(),"draftUuid",draft)))).andReturn();
+        assertThat(result.getResponse().getStatus()).isEqualTo(401);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM return_request WHERE external_order_number=?",Integer.class,number(order))).isZero();
+    }
+    @Test void expiredOrChangedOrderDraftCannotBeConfirmed() throws Exception {
+        var order=order("paid"); var session=session("OM-1001");prepareAddress(order,session);var draft=draftUuid(session);
+        db.update("UPDATE address_change_draft SET expires_at=DATE_SUB(NOW(),INTERVAL 1 SECOND) WHERE draft_uuid=?",draft);
+        assertThat(addressPost(session,draft).path("code").asText()).isNotEqualTo("200");
+        db.update("UPDATE address_change_draft SET expires_at=DATE_ADD(NOW(),INTERVAL 1 HOUR) WHERE draft_uuid=?",draft);
+        db.update("UPDATE order_info SET version=version+1 WHERE id=?",order);
+        assertThat(addressPost(session,draft).path("code").asText()).isNotEqualTo("200");
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM return_request WHERE external_order_number=?",Integer.class,number(order))).isZero();
+    }
+    @Test void legacyAddressStaysImmutableAndFailureAuditIsRetained() throws Exception {
+        var order=order("paid");var old=request(order,"ADDRESS_CHANGE","APPROVED_MANUAL");
+        String original="{\"newAddress\":\"广东省广州市天河区中山大道2号\"}";
+        db.update("UPDATE commerce_action_request SET requested_payload=? WHERE id=?",original,old);
+        assertThat(executeApi(old,supervisor).path("code").asText()).isNotEqualTo("200");
+        var session=session("OM-1001");prepareAddress(order,session);var result=addressPost(session,draftUuid(session));
+        var id=db.queryForObject("SELECT id FROM return_request WHERE request_no=?",Long.class,result.path("data").path("requestNo").asText());returnIds.add(id);
+        assertThat(json.readTree(db.queryForObject("SELECT requested_payload FROM commerce_action_request WHERE id=?",String.class,old))).isEqualTo(json.readTree(original));
+        assertThat(db.queryForObject("SELECT status FROM commerce_action_request WHERE id=?",String.class,old)).isEqualTo("APPROVED_MANUAL");
+        assertThat(db.queryForObject("SELECT state FROM commerce_action_record WHERE request_id=? AND source='commerce_action_request'",String.class,old)).isEqualTo("FAILED");
+        assertThat(db.queryForObject("SELECT status FROM return_request WHERE id=?",Integer.class,id)).isEqualTo(1);
+    }
+    @Test void addressAuditFailureRollsBackOrderAndApprovalExecution() throws Exception {
+        var order=order("paid");var id=request(order,"ADDRESS_CHANGE","APPROVED_MANUAL");
+        doThrow(new IllegalStateException("测试地址审计写入失败")).when(audit).record(eq("commerce_action_request"),eq(id),anyString(),eq("EXECUTION"),eq("EXECUTED"),anyLong(),anyString(),anyString(),anyString());
+        assertThat(executeApi(id,supervisor).path("code").asText()).isNotEqualTo("200");
+        assertThat(db.queryForObject("SELECT shipping_address FROM order_info WHERE id=?",String.class,order)).isNull();
+        assertThat(db.queryForObject("SELECT status FROM commerce_action_request WHERE id=?",String.class,id)).isEqualTo("APPROVED_MANUAL");
+    }
+    @Test void refundOnlyExecutesAfterApprovalAndExplicitSimulation() throws Exception {
+        var order=order("paid");var id=refund(order,1);
+        assertThat(simulate(id).path("code").asText()).isNotEqualTo("200");
+        assertThat(adminPost("/api/actions/return_request/"+id+"/approve",supervisor,1001L,Map.of()).path("code").asText()).isEqualTo("200");
+        assertThat(db.queryForObject("SELECT order_status FROM order_info WHERE id=?",String.class,order)).isEqualTo("paid");
+        assertThat(adminPost("/api/actions/return_request/"+id+"/execute",supervisor,1001L,Map.of()).path("code").asText()).isNotEqualTo("200");
+        var result=simulate(id); assertThat(result.path("code").asText()).isEqualTo("200");
+        assertThat(result.path("data").path("executionMode").asText()).isEqualTo("LOCAL_SIMULATION");
+        assertThat(result.path("data").path("paymentRefundConfirmed").asBoolean()).isFalse();
+        assertThat(db.queryForObject("SELECT order_status FROM order_info WHERE id=?",String.class,order)).isEqualTo("refunded");
+        assertThat(db.queryForObject("SELECT payment_status FROM order_info WHERE id=?",String.class,order)).isEqualTo("refunded");
+        assertThat(db.queryForObject("SELECT refunded_amount FROM order_info WHERE id=?",java.math.BigDecimal.class,order)).isEqualByComparingTo("100");
+        assertThat(db.queryForObject("SELECT status FROM return_request WHERE id=?",Integer.class,id)).isEqualTo(5);
+        assertThat(simulate(id).path("data").path("id")).isEqualTo(result.path("data").path("id"));
+        assertThat(db.queryForObject("SELECT version FROM order_info WHERE id=?",Integer.class,order)).isEqualTo(1);
+    }
+    @Test void rejectedUnpaidAlreadyRefundedAndInvalidAmountsFailClosed() throws Exception {
+        assertThat(simulate(refund(order("paid"),4)).path("code").asText()).isNotEqualTo("200");
+        for (String change : List.of("payment_status='unpaid'","refunded_amount=100","refunded_amount=10","sync_source='SHOPIFY'")) {
+            var order=order("paid");var id=refund(order,3);db.update("UPDATE order_info SET "+change+" WHERE id=?",order);
+            assertThat(simulate(id).path("code").asText()).isNotEqualTo("200");
+            assertThat(db.queryForObject("SELECT order_status FROM order_info WHERE id=?",String.class,order)).isEqualTo("paid");
+        }
+        for(String amount:List.of("0","-1","50","100.0001","101")) {
+            var order=order("paid");var id=refund(order,3);db.update("UPDATE return_request SET amount=? WHERE id=?",new java.math.BigDecimal(amount),id);
+            assertThat(simulate(id).path("code").asText()).isNotEqualTo("200");
+            assertThat(db.queryForObject("SELECT refunded_amount FROM order_info WHERE id=?",java.math.BigDecimal.class,order)).isEqualByComparingTo("0");
+        }
+        var id=refund(order("paid"),3);db.update("UPDATE return_request SET currency='USD' WHERE id=?",id);
+        assertThat(simulate(id).path("code").asText()).isNotEqualTo("200");
+    }
+    @Test void refundPreservesShippingAndLogisticsHistoryAndToolsTellSimulationTruth() throws Exception {
+        var order=order("delivered");var id=refund(order,3);
+        db.update("UPDATE order_info SET shipping_address='{\"recipient\":\"测试收件人\"}',shipping_country='CN',shipping_state='北京市',shipping_zip='100000',tracking_number='IT-TRACK',tracking_carrier='测试物流',tracking_history='[{\"status\":\"已签收\"}]' WHERE id=?",order);
+        var before=db.queryForMap("SELECT shipping_address,shipping_country,shipping_state,shipping_zip,tracking_number,tracking_carrier,tracking_history,fulfillment_status FROM order_info WHERE id=?",order);
+        assertThat(simulate(id).path("code").asText()).isEqualTo("200");
+        assertThat(db.queryForMap("SELECT shipping_address,shipping_country,shipping_state,shipping_zip,tracking_number,tracking_carrier,tracking_history,fulfillment_status FROM order_info WHERE id=?",order)).isEqualTo(before);
+        TenantContextHolder.set(1001L);
+        try {
+            var result=orderTools.queryOrder(number(order),"local-buyer-it@example.com");
+            assertThat(result.status()).isEqualTo("refunded"); assertThat(result.refundExecutionMode()).isEqualTo("LOCAL_SIMULATION");
+            assertThat(result.paymentRefundConfirmed()).isFalse(); assertThat(result.afterSalesProgress().get(0).executionMessage()).contains("本地模拟退款已完成","未调用真实支付渠道");
+            assertThat(commerce.getOrder(order).refundMessage()).contains("本地模拟已退款","实际支付退款未确认");
+        } finally { TenantContextHolder.clear(); }
+    }
+    @Test void refundConcurrentSameRequestHasOneSuccessAndSameResult() throws Exception {
+        var order=order("paid");var id=refund(order,3);var pool=Executors.newFixedThreadPool(4);
+        try {
+            var futures=new ArrayList<Future<Long>>();
+            for(int i=0;i<8;i++) futures.add(pool.submit(() -> {
+                authorize(); try { return execution.execute("return_request",id,"LOCAL_SIMULATION").getId(); }
+                finally { TenantContextHolder.clear();SecurityContextHolder.clearContext(); }
+            }));
+            var ids=new HashSet<Long>();for(var f:futures)ids.add(f.get(30,TimeUnit.SECONDS)); assertThat(ids).hasSize(1);
+        } finally { pool.shutdownNow(); }
+        assertThat(db.queryForObject("SELECT refunded_amount FROM order_info WHERE id=?",java.math.BigDecimal.class,order)).isEqualByComparingTo("100");
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM commerce_action_record WHERE source='return_request' AND request_id=? AND execution_key='LOCAL'",Integer.class,id)).isEqualTo(1);
+    }
+    @Test void distinctRefundRequestsForSameOrderCannotRefundTwice() throws Exception {
+        var order=order("paid");var first=refund(order,3);var second=refund(order,3);var pool=Executors.newFixedThreadPool(2);
+        try {
+            var futures=new ArrayList<Future<Boolean>>();
+            for(long id:List.of(first,second))futures.add(pool.submit(() -> { authorize();try { execution.execute("return_request",id,"LOCAL_SIMULATION");return true; }catch(com.omnimerchant.common.exception.BusinessException e){return false;}finally { TenantContextHolder.clear();SecurityContextHolder.clearContext(); } }));
+            int success=0;for(var f:futures)if(f.get(30,TimeUnit.SECONDS))success++; assertThat(success).isEqualTo(1);
+        } finally { pool.shutdownNow(); }
+        assertThat(db.queryForObject("SELECT version FROM order_info WHERE id=?",Integer.class,order)).isEqualTo(1);
+        assertThat(db.queryForObject("SELECT refunded_amount FROM order_info WHERE id=?",java.math.BigDecimal.class,order)).isEqualByComparingTo("100");
+    }
+    @Test void refundAuditOrOrderFailureRollsBackAllBusinessState() throws Exception {
+        var order=order("paid");var id=refund(order,3);
+        doThrow(new IllegalStateException("测试退款审计写入失败")).when(audit).record(eq("return_request"),eq(id),anyString(),eq("EXECUTION"),eq("EXECUTED"),anyLong(),anyString(),anyString(),anyString());
+        assertThat(simulate(id).path("code").asText()).isNotEqualTo("200");
+        assertThat(db.queryForObject("SELECT order_status FROM order_info WHERE id=?",String.class,order)).isEqualTo("paid");
+        assertThat(db.queryForObject("SELECT refunded_amount FROM order_info WHERE id=?",java.math.BigDecimal.class,order)).isEqualByComparingTo("0");
+        assertThat(db.queryForObject("SELECT status FROM return_request WHERE id=?",Integer.class,id)).isEqualTo(3);
+        assertThat(db.queryForObject("SELECT state FROM commerce_action_record WHERE source='return_request' AND request_id=?",String.class,id)).isEqualTo("FAILED");
+        reset(audit);doReturn(0).when(orderMapper).updateById(any(com.omnimerchant.agent.entity.OrderInfo.class));
+        assertThat(simulate(id).path("code").asText()).isNotEqualTo("200");
+        assertThat(db.queryForObject("SELECT status FROM return_request WHERE id=?",Integer.class,id)).isEqualTo(3);
+    }
+    @Test void refundExecutionRequiresRoleTenantAndOrderOwner() throws Exception {
+        var order=order("paid");var id=refund(order,3);
+        var denied=mvc.perform(post("/api/actions/return_request/"+id+"/execute").header("Authorization","Bearer "+agent).header("X-Tenant-Id","1001").contentType(MediaType.APPLICATION_JSON).content("{\"executionMode\":\"LOCAL_SIMULATION\"}")).andReturn();
+        assertThat(denied.getResponse().getStatus()).isEqualTo(403);
+        var other=user("human-execution-other-it@example.com","SUPPORT_SUPERVISOR",1002L);
+        assertThat(adminPost("/api/actions/return_request/"+id+"/execute",other,1002L,Map.of("executionMode","LOCAL_SIMULATION")).path("code").asText()).isNotEqualTo("200");
+        db.update("UPDATE return_request SET customer_email='other-buyer@example.com' WHERE id=?",id);
+        assertThat(simulate(id).path("code").asText()).isNotEqualTo("200");
+        assertThat(db.queryForObject("SELECT order_status FROM order_info WHERE id=?",String.class,order)).isEqualTo("paid");
+    }
+    @Test void refundRequestUpdateFailureRollsBackOrderAndSuccessAudit() throws Exception {
+        var order=order("paid");var id=refund(order,3);
+        doReturn(0).when(returnMapper).updateById(any(com.omnimerchant.agent.entity.ReturnRequest.class));
+        assertThat(simulate(id).path("code").asText()).isNotEqualTo("200");
+        assertThat(db.queryForObject("SELECT order_status FROM order_info WHERE id=?",String.class,order)).isEqualTo("paid");
+        assertThat(db.queryForObject("SELECT refunded_amount FROM order_info WHERE id=?",java.math.BigDecimal.class,order)).isEqualByComparingTo("0");
+        assertThat(db.queryForObject("SELECT status FROM return_request WHERE id=?",Integer.class,id)).isEqualTo(3);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM commerce_action_record WHERE source='return_request' AND request_id=? AND state='EXECUTED'",Integer.class,id)).isZero();
+    }
+    @Test void addressExecutionCannotTargetAnotherTenantOrder() throws Exception {
+        var order=order("paid");var id=request(order,"ADDRESS_CHANGE","APPROVED_MANUAL");
+        var other=user("human-execution-other-it@example.com","SUPPORT_SUPERVISOR",1002L);
+        assertThat(adminPost("/api/actions/commerce_action_request/"+id+"/execute",other,1002L,Map.of()).path("code").asText()).isNotEqualTo("200");
+        db.update("UPDATE order_info SET tenant_id=1002 WHERE id=?",order);
+        assertThat(executeApi(id,supervisor).path("code").asText()).isNotEqualTo("200");
+        assertThat(db.queryForObject("SELECT shipping_address FROM order_info WHERE id=?",String.class,order)).isNull();
     }
 }
